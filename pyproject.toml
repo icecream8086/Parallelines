@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "parallelines"
+version = "0.1.0"
+description = "Source Engine VPK/addon resource dependency analysis CLI tool (L4D2, CS:GO, TF2, Portal 2, Dota 2, etc.)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "LinLai", email = "zzbsn@example.com" },
+]
+keywords = ["source-engine", "vpk", "l4d2", "game-tools", "static-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Games/Entertainment :: First Person Shooters",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "srctools>=2.7.0",
+    "networkx>=3.6.1",
+    "pandas>=3.0.3",
+    "pyarrow>=24.0.0",
+    "prettytable>=3.18.0",
+    "tqdm>=4.67.0",
+    "textual>=2.1.0",
+    "plotext>=5.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "mypy>=1.19.0",
+    "ruff>=0.15.20",
+    "pyinstaller>=6.0",
+    "pywin32>=306 ; sys_platform == 'win32'",
+]
+build = [
+    "pyinstaller>=6.0",
+    "pywin32>=306 ; sys_platform == 'win32'",
+]
+
+[project.urls]
+Homepage = "https://github.com/zzbsn/parallelines"
+Source = "https://github.com/zzbsn/parallelines"
+BugTracker = "https://github.com/zzbsn/parallelines/issues"
+
+[project.scripts]
+parallelines = "parallelines.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parallelines*"]
+
+[tool.setuptools.package-data]
+"parallelines" = ["py.typed"]
+
+[project.entry-points."console_scripts"]
+parallelines = "parallelines.cli:main"

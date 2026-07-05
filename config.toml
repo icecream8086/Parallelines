@@ -1,0 +1,36 @@
+[general]
+game = ""
+game_root = ""
+cache_dir = "./cache"
+enable_cache = true
+cache_strategy = "mtime"
+num_workers = 0
+memory_limit = ""
+log_level = "INFO"
+
+[analysis]
+detect_redundant = true
+detect_dead = true
+detect_dependency_conflicts = true
+detect_isolated_packages = true
+compute_impact = false
+include_disabled_addons = false
+
+[entry_points]
+auto_manifests = true
+all_maps_as_entries = true
+custom_entries = []
+use_pure_server_whitelist = false
+pure_server_whitelist_path = ""
+
+[addons]
+parse_fireaxe = false
+fireaxe_json_path = ""
+parse_addoninfo = true
+addon_state_source = "directory"
+
+[output]
+format = "json"
+output_dir = "./reports"
+include_dependency_chain = true
+generate_graphviz = false

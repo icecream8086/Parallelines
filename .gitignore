@@ -1,1 +1,36 @@
+# Generated cache & reports
+cache/
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.spec
+
+# LSP / type checking
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Claude Code
+.claude/
+
+CLAUDE.md
+
+tests
+
 devdocs
