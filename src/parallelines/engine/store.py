@@ -37,11 +37,16 @@ class Relation(Generic[T]):
     """类型化关系表。内部是 list[T]，支持按列 hash index。"""
 
     def __init__(
-        self, name: str, columns: tuple[str, ...], rows: list[T] | None = None
+        self,
+        name: str,
+        columns: tuple[str, ...],
+        rows: list[T] | None = None,
+        row_type: type | None = None,
     ):
         self.name = name
         self.columns = columns
         self.rows: list[T] = rows or []
+        self._row_type: type | None = row_type
         self._index: dict[str, dict] = {}  # col_name -> {value: [row_indices]}
 
     @classmethod
@@ -49,8 +54,9 @@ class Relation(Generic[T]):
         """从行列表构造，自动推导 columns 为 T 的所有 dataclass 字段名。"""
         if not rows:
             return cls(name, ())
+        row_type = type(rows[0])
         fields = [f.name for f in dataclasses.fields(rows[0])]  # type: ignore[arg-type]
-        return cls(name, tuple(fields), rows)
+        return cls(name, tuple(fields), rows, row_type=row_type)
 
     def build_index(self, *col_names: str) -> None:
         """为指定列建立 hash index。多次调用追加索引。"""
@@ -155,6 +161,104 @@ class Relation(Generic[T]):
             name=f"{self.name}\N{BOWTIE}{other.name}",
             columns=result_columns,
             rows=result_rows,
+        )
+
+    def join_left(self, other: Relation, on: str) -> Relation:
+        """左外连接。self 的所有行保留，other 无匹配时填充 None。"""
+        if on not in self.columns or on not in other.columns:
+            raise ValueError(f"Join column '{on}' not found in both relations")
+
+        other.build_index(on)
+        self_on_idx = self.columns.index(on)
+        other_cols_without_on = tuple(c for c in other.columns if c != on)
+        result_columns = self.columns + other_cols_without_on
+        result_rows: list[tuple] = []
+        null_other = tuple([None] * len(other_cols_without_on))
+
+        for self_row in self.rows:
+            self_val: object
+            if isinstance(self_row, tuple):
+                self_val = self_row[self_on_idx]
+            else:
+                self_val = getattr(self_row, on)
+
+            # Guard: None keys never match SQL NULL semantics (no match ≠ NULL).
+            matches = other.lookup(on, self_val) if self_val is not None else []
+
+            if not matches:
+                if isinstance(self_row, tuple):
+                    result_rows.append(self_row + null_other)
+                else:
+                    self_vals = tuple(getattr(self_row, c) for c in self.columns)
+                    result_rows.append(self_vals + null_other)
+            else:
+                for other_row in matches:
+                    other_vals = tuple(
+                        other_row[i]
+                        if isinstance(other_row, tuple)
+                        else getattr(other_row, c)
+                        for i, c in enumerate(other.columns)
+                        if c != on
+                    )
+                    if isinstance(self_row, tuple):
+                        result_rows.append(self_row + other_vals)
+                    else:
+                        self_vals = tuple(getattr(self_row, c) for c in self.columns)
+                        result_rows.append(self_vals + other_vals)
+
+        return Relation(
+            name=f"{self.name}⭤{other.name}",
+            columns=result_columns,
+            rows=result_rows,
+        )
+
+    def join_right(self, other: Relation, on: str) -> Relation:
+        """右外连接。等价于 other.join_left(self, on)。"""
+        return other.join_left(self, on)
+
+    def join_full(self, other: Relation, on: str) -> Relation:
+        """全外连接。left ∪ right，按行去重。"""
+        if on not in self.columns or on not in other.columns:
+            raise ValueError(f"Join column '{on}' not found in both relations")
+
+        left = self.join_left(other, on)
+        right = other.join_left(self, on)
+
+        self_on_idx = self.columns.index(on)
+        other_on_idx = other.columns.index(on)
+
+        # Track on values that exist in self (None excluded — NULL != NULL)
+        self_on_values: set = set()
+        for row in self.rows:
+            v = row[self_on_idx] if isinstance(row, tuple) else getattr(row, on)
+            if v is not None:
+                self_on_values.add(v)
+
+        merged: list[tuple] = list(left.rows)
+
+        for row in right.rows:
+            on_val = row[other_on_idx] if isinstance(row, tuple) else getattr(row, on)
+            if on_val not in self_on_values:
+                # Unmatched other row — convert to left's column order
+                if isinstance(row, tuple):
+                    self_part: list = [None] * len(self.columns)
+                    self_part[self_on_idx] = on_val
+                    other_part = tuple(
+                        row[i] for i, c in enumerate(other.columns) if c != on
+                    )
+                    merged.append(tuple(self_part) + other_part)
+                else:
+                    self_vals: list = [None] * len(self.columns)
+                    self_vals[self_on_idx] = on_val
+                    other_vals = tuple(
+                        getattr(row, c) for c in other.columns if c != on
+                    )
+                    merged.append(tuple(self_vals) + other_vals)
+
+        return Relation(
+            name=f"{self.name}⟗{other.name}",
+            columns=left.columns,
+            rows=merged,
         )
 
     def group_by(self, key: str, agg: dict[str, Callable]) -> "Relation":
@@ -353,3 +457,29 @@ class ResultStore:
             else:
                 result[attr] = []
         return result
+
+    def execute(self, query_json: dict) -> Relation:
+        """Parse and execute a JSON query against this store.
+
+        Args:
+            query_json: A JSON-compatible dict representing the query.
+
+        Returns:
+            A Relation with the query results.
+
+        Raises:
+            QueryParseError: If the query dict cannot be parsed.
+            QueryValidationError: If the query fails schema validation.
+        """
+        from parallelines.engine.query_parser import QueryParser
+        from parallelines.engine.query_validator import (
+            QueryValidationError,
+            QueryValidator,
+        )
+        from parallelines.engine.query_executor import QueryExecutor
+
+        ast = QueryParser.parse(query_json)
+        errors = QueryValidator.validate(ast, self)
+        if errors:
+            raise QueryValidationError(errors)
+        return QueryExecutor.execute(ast, self)

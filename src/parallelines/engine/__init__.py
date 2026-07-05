@@ -1,3 +1,6 @@
+from parallelines.engine.query_ast import Query
+from parallelines.engine.query_parser import QueryParseError
+from parallelines.engine.query_validator import QueryValidationError
 from parallelines.engine.schema import (
     AddonRow,
     DepConflictRow,
@@ -19,6 +22,9 @@ __all__ = [
     "HashConflictRow",
     "ImpactRow",
     "IsolatedPackageRow",
+    "Query",
+    "QueryParseError",
+    "QueryValidationError",
     "Relation",
     "ResultStore",
 ]
