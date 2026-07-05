@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisReport, AnalysisFragment
+from parallelines.engine import ResultStore
 
 
 class AnalyzerEngine:
@@ -16,10 +16,8 @@ class AnalyzerEngine:
         """Add a new analyzer to the pipeline."""
         self.analyzers.append(analyzer)
 
-    def run(self, vfs, graph) -> AnalysisReport:
+    def run(self, vfs, graph, store: ResultStore) -> ResultStore:
         """Execute all analyzers and collect results."""
-        fragments: list[AnalysisFragment] = []
         for analyzer in self.analyzers:
-            fragment = analyzer.analyze(vfs, graph)
-            fragments.append(fragment)
-        return AnalysisReport(fragments=fragments)
+            analyzer.analyze(vfs, graph, store)
+        return store

@@ -4,7 +4,8 @@ different source than expected."""
 from __future__ import annotations
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import DepConflictRow
 
 
 class DependencyConflictAnalyzer(Analyzer):
@@ -19,51 +20,38 @@ class DependencyConflictAnalyzer(Analyzer):
       overridden (is redundant from another provider's perspective).
     """
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Check every active file's dependencies and graph edges for conflicts.
 
         Args:
             vfs: VirtualFileSystem instance.
             graph: DependencyGraph instance.
-
-        Returns:
-            An AnalysisFragment with one item per conflict found.
+            store: ResultStore to write results into.
         """
-        if vfs is None or graph is None:
-            return AnalysisFragment(
-                analyzer_name="DependencyConflictAnalyzer", items=[]
-            )
+        if vfs is None:
+            return
 
-        active_files = vfs.get_all_active()
-        items: list[dict] = []
-
-        # --- Check node-level dependencies -----------------------------------
-        for node in active_files:
+        rows: list[DepConflictRow] = []
+        for node in vfs.get_all_active():
             for dep_path in node.dependencies:
                 provider = vfs.get_active_file(dep_path)
                 if provider is None:
-                    items.append(
-                        {
-                            "source_file": node.virtual_path,
-                            "depends_on": dep_path,
-                            "provided_by": "MISSING",
-                            "expected_from": node.source_name,
-                            "risk": "missing_dependency",
-                        }
+                    rows.append(
+                        DepConflictRow(
+                            from_path=node.virtual_path,
+                            to_path=dep_path,
+                            expected_source=node.source_name,
+                            actual_source="MISSING",
+                        )
                     )
                 elif provider.source_name != node.source_name:
-                    items.append(
-                        {
-                            "source_file": node.virtual_path,
-                            "depends_on": dep_path,
-                            "provided_by": provider.source_name,
-                            "expected_from": node.source_name,
-                            "risk": "source_mismatch",
-                        }
+                    rows.append(
+                        DepConflictRow(
+                            from_path=node.virtual_path,
+                            to_path=dep_path,
+                            expected_source=node.source_name,
+                            actual_source=provider.source_name,
+                        )
                     )
 
-        # Deduplicate: the node.dependencies loop above already reports every
-        # dependency edge (GraphBuilder populates both node.dependencies and
-        # graph edges from the same data).  Duplicate reporting from graph
-        # edges is removed here.
-        return AnalysisFragment(analyzer_name="DependencyConflictAnalyzer", items=items)
+        store.dep_conflicts = Relation.from_rows("dep_conflicts", rows)

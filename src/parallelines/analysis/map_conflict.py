@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections import defaultdict
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import HashConflictRow
 
 
 class MapConflictAnalyzer(Analyzer):
@@ -31,9 +32,16 @@ class MapConflictAnalyzer(Analyzer):
         self.target_maps = target_maps
         self.external_sources = external_sources or {}
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
+        """Detect map version conflicts across VPKs.
+
+        Args:
+            vfs: VirtualFileSystem instance.
+            graph: DependencyGraph instance (unused by this analyzer).
+            store: ResultStore to write results into.
+        """
         if vfs is None:
-            return AnalysisFragment(analyzer_name="MapConflictAnalyzer", items=[])
+            return
 
         # 1. 从 VFS 收集所有 .bsp 文件来源
         bsp_sources: dict[str, list[dict]] = defaultdict(list)
@@ -62,7 +70,7 @@ class MapConflictAnalyzer(Analyzer):
                 }
             )
 
-        items: list[dict] = []
+        rows: list[HashConflictRow] = []
         for virtual_path, sources in bsp_sources.items():
             # 跳过不在目标集中的（除非未指定目标集）
             if self.target_maps and virtual_path not in self.target_maps:
@@ -73,31 +81,27 @@ class MapConflictAnalyzer(Analyzer):
             if len(unique) < 2:
                 continue
 
-            # 当前生效版本（VFS 中的活跃文件）
-            active = vfs.get_active_file(virtual_path)
-            active_source = active.source_name if active else "—"
-
             # 哈希差异
             hashes = {s["hash"] for s in sources if s["hash"]}
-            hash_conflict = len(hashes) > 1
+            if len(hashes) <= 1:
+                continue
 
             # 按优先级排序
             sorted_src = sorted(sources, key=lambda x: x["priority"], reverse=True)
-
-            items.append(
-                {
-                    "map": virtual_path,
-                    "active_source": active_source,
-                    "total_sources": len(unique),
-                    "hash_conflict": "是" if hash_conflict else "否",
-                    "sources": ", ".join(
-                        f"{s['source']}(P{s['priority']})" for s in sorted_src
-                    ),
-                    "overridden": ", ".join(
-                        s["source"] for s in sorted_src if s["source"] != active_source
+            winner = sorted_src[0]
+            for loser in sorted_src[1:]:
+                rows.append(
+                    HashConflictRow(
+                        virtual_path=virtual_path,
+                        winner_source=winner["source"],
+                        loser_source=loser["source"],
+                        winner_hash=str(winner["hash"] or ""),
+                        loser_hash=str(loser["hash"] or ""),
                     )
-                    or "—",
-                }
-            )
+                )
 
-        return AnalysisFragment(analyzer_name="MapConflictAnalyzer", items=items)
+        if rows:
+            if store.hash_conflicts is None:
+                store.hash_conflicts = Relation.from_rows("hash_conflicts", rows)
+            else:
+                store.hash_conflicts.rows.extend(rows)

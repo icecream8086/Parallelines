@@ -7,7 +7,16 @@ from typing import Any
 
 from textual.app import App
 
-from parallelines.types import AnalysisReport, AnalysisFragment
+from parallelines.engine import ResultStore
+from parallelines.engine.schema import (
+    FileRow,
+    DependencyRow,
+    HashConflictRow,
+    DepConflictRow,
+    IsolatedPackageRow,
+    ImpactRow,
+)
+from parallelines.engine.store import Relation
 
 
 class ParallelinesTUI(App):
@@ -52,9 +61,47 @@ class ParallelinesTUI(App):
             raw = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             return
-        fragments = []
-        for entry in raw:
-            an = entry.get("analyzer", entry.get("analyzer_name", "?"))
-            items = entry.get("results", entry.get("items", []))
-            fragments.append(AnalysisFragment(analyzer_name=an, items=items))
-        screen.load_report(AnalysisReport(fragments=fragments))
+        store = ResultStore()
+        row_map = {
+            "files": (
+                FileRow,
+                "virtual_path",
+                "source_name",
+                "source_type",
+                "priority",
+                "file_hash",
+                "file_size",
+                "is_active",
+                "is_dead",
+                "is_redundant",
+            ),
+            "dependencies": (DependencyRow, "from_path", "to_path", "expected_source"),
+            "hash_conflicts": (
+                HashConflictRow,
+                "virtual_path",
+                "winner_source",
+                "loser_source",
+                "winner_hash",
+                "loser_hash",
+            ),
+            "dep_conflicts": (
+                DepConflictRow,
+                "from_path",
+                "to_path",
+                "expected_source",
+                "actual_source",
+            ),
+            "isolated": (
+                IsolatedPackageRow,
+                "source_name",
+                "dead_file_count",
+                "example_paths",
+            ),
+            "impact": (ImpactRow, "virtual_path", "source_name", "impact_count"),
+        }
+        for rel_name, (cls, *fields) in row_map.items():
+            items = raw.get(rel_name, [])
+            if items:
+                rows: list = [cls(**{f: item.get(f) for f in fields}) for item in items]  # type: ignore[operator,arg-type]
+                setattr(store, rel_name, Relation.from_rows(rel_name, rows))
+        screen.load_report(store)

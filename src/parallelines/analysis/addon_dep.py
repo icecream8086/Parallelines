@@ -6,8 +6,9 @@ import logging
 from typing import Any
 
 from parallelines.analysis.base import Analyzer
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import DepConflictRow
 from parallelines.parsers.addoninfo import extract_dependency_ids, parse_addoninfo
-from parallelines.types import AnalysisFragment
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +33,17 @@ class AddonDependencyAnalyzer(Analyzer):
         """
         self.chain = chain
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Identify missing addon dependencies.
 
         Args:
             vfs: :class:`~parallelines.vfs.filesystem.VirtualFileSystem` instance.
             graph: :class:`~parallelines.graph.deps.DependencyGraph` instance
                    (unused by this analyzer).
-
-        Returns:
-            An :class:`~parallelines.types.AnalysisFragment` with one item per
-            missing dependency.
+            store: ResultStore to write results into.
         """
         if vfs is None:
-            return AnalysisFragment(analyzer_name="AddonDependencyAnalyzer", items=[])
+            return
 
         # 1. Collect all installed addon IDs from the VFS
         installed_ids: dict[str, set[str]] = {}  # addon_id -> source_names
@@ -57,7 +55,6 @@ class AddonDependencyAnalyzer(Analyzer):
                 installed_ids.setdefault(node.source_name, set()).add(node.source_name)
 
         # 2. Find all addoninfo.txt files among active files and parse them
-        items: list[dict[str, Any]] = []
         addoninfo_files = [
             node
             for node in vfs.get_all_active()
@@ -66,8 +63,9 @@ class AddonDependencyAnalyzer(Analyzer):
 
         if not addoninfo_files:
             logger.debug("No addoninfo.txt files found in active VFS")
-            return AnalysisFragment(analyzer_name="AddonDependencyAnalyzer", items=[])
+            return
 
+        rows: list[DepConflictRow] = []
         for node in addoninfo_files:
             addon_name = node.source_name
             declared_deps = self._parse_addoninfo_deps(node)
@@ -77,13 +75,13 @@ class AddonDependencyAnalyzer(Analyzer):
             for dep_id in declared_deps:
                 # Check if the dependency is installed
                 if dep_id not in installed_ids:
-                    items.append(
-                        {
-                            "addon": addon_name,
-                            "virtual_path": node.virtual_path,
-                            "missing_dependency_id": dep_id,
-                            "severity": "warning",
-                        }
+                    rows.append(
+                        DepConflictRow(
+                            from_path=node.virtual_path,
+                            to_path=dep_id,
+                            expected_source=addon_name,
+                            actual_source="MISSING",
+                        )
                     )
                 else:
                     dep_sources = installed_ids[dep_id]
@@ -94,10 +92,14 @@ class AddonDependencyAnalyzer(Analyzer):
                         ", ".join(sorted(dep_sources)),
                     )
 
-        if not items:
+        if not rows:
             logger.info("All declared addon dependencies are satisfied")
 
-        return AnalysisFragment(analyzer_name="AddonDependencyAnalyzer", items=items)
+        if rows:
+            if store.dep_conflicts is None:
+                store.dep_conflicts = Relation.from_rows("dep_conflicts", rows)
+            else:
+                store.dep_conflicts.rows.extend(rows)
 
     def _parse_addoninfo_deps(self, node: Any) -> list[str]:
         """Read addoninfo.txt content through the FileSystemChain and extract dependency IDs.

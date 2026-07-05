@@ -13,6 +13,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Static, DataTable
 
+from parallelines.engine import ResultStore
+
 from parallelines.i18n import _, set_language, detect_language
 
 
@@ -38,7 +40,6 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
     from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
     from parallelines.analysis.dead_file import DeadFileAnalyzer
     from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
-    from parallelines.analysis.engine import AnalyzerEngine
     from parallelines.analysis.entry_points import discover_entry_points
     from parallelines.analysis.hash_conflict import HashConflictAnalyzer
     from parallelines.analysis.impact import ImpactAnalyzer
@@ -66,17 +67,24 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
 
     status_cb("Running analyzers...")
     entries = discover_entry_points(vfs, chain=chain) if vfs else set()
-    engine = AnalyzerEngine()
-    engine.register(RedundancyAnalyzer())
-    engine.register(DeadFileAnalyzer(entry_points=entries if entries else None))
-    engine.register(HashConflictAnalyzer())
-    engine.register(DependencyConflictAnalyzer())
-    engine.register(IsolatedPackageAnalyzer())
-    engine.register(ImpactAnalyzer(top_n=20))
-    engine.register(AddonDependencyAnalyzer(chain=chain))
 
-    report = engine.run(vfs, graph)
-    return report
+    analyzers = [
+        RedundancyAnalyzer(),
+        DeadFileAnalyzer(entry_points=entries if entries else None),
+        HashConflictAnalyzer(),
+        DependencyConflictAnalyzer(),
+        IsolatedPackageAnalyzer(),
+        ImpactAnalyzer(top_n=20),
+        AddonDependencyAnalyzer(chain=chain),
+    ]
+
+    store = ResultStore.from_analysis(
+        vfs=vfs,
+        graph=graph,
+        analyzers=analyzers,
+        entry_points=entries,
+    )
+    return store
 
 
 class MainScreen(Screen):
@@ -113,7 +121,7 @@ class MainScreen(Screen):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._report = None
+        self._store = None
         self._game_root: str = ""
         self._game: str = ""
         self._show_help = False
@@ -169,11 +177,11 @@ class MainScreen(Screen):
         self.query_one("#help", Static).set_class(self._show_help, "visible")
 
     def action_save_report(self) -> None:
-        if self._report:
+        if self._store:
             try:
-                from parallelines.report.generators import generate_report
+                from parallelines.report.generators import generate_report_from_store
 
-                p = generate_report(self._report, "json", "./reports")
+                p = generate_report_from_store(self._store, "json", "./reports")
                 self._redraw_status(msg=f"Saved: {p.name}")
             except Exception as exc:
                 self._redraw_status(msg=f"Save error: {exc}")
@@ -194,7 +202,7 @@ class MainScreen(Screen):
             if exc:
                 self._redraw_status(msg=f"Error: {exc}")
                 return
-            self._report = fut.result()
+            self._store = fut.result()
             elapsed = time.perf_counter() - self._t0
             self._refresh_table()
             self._redraw_status(msg=f"Done ({elapsed:.1f}s)")
@@ -221,8 +229,22 @@ class MainScreen(Screen):
 
     def _redraw_status(self, msg: str = "") -> None:
         parts = []
-        if self._report:
-            total = sum(len(f.items) for f in self._report.fragments)
+        if self._store:
+            total = 0
+            if self._store.files:
+                total += len(self._store.files.select(lambda r: r.is_redundant))
+                total += len(self._store.files.select(lambda r: r.is_dead))
+            for rel in (
+                self._store.hash_conflicts,
+                self._store.dep_conflicts,
+                self._store.impact,
+            ):
+                if rel:
+                    total += len(rel)
+            if self._store.isolated:
+                total += len(
+                    self._store.isolated.select(lambda r: r.dead_file_count > 0)
+                )
             parts.append(f"issues:{_fmt(total)}")
         if msg:
             parts.append(msg)
@@ -244,17 +266,46 @@ class MainScreen(Screen):
         t = self.query_one("#analyzers", DataTable)
         t.clear()
         t.add_columns(_("analyzer.redundancy"), _("report.issues"), _("report.status"))
-        if not self._report or not self._report.fragments:
+
+        if self._store is None:
             t.add_rows([["—", "—", _("report.ok")]])
             return
-        for f in self._report.fragments:
-            name = f.analyzer_name.replace("Analyzer", "")
-            cnt = len(f.items)
+
+        fragments = [
+            (
+                "Redundancy",
+                len(self._store.files.select(lambda r: r.is_redundant))
+                if self._store.files
+                else 0,
+            ),
+            (
+                "DeadFile",
+                len(self._store.files.select(lambda r: r.is_dead))
+                if self._store.files
+                else 0,
+            ),
+            (
+                "HashConflict",
+                len(self._store.hash_conflicts) if self._store.hash_conflicts else 0,
+            ),
+            (
+                "DepConflict",
+                len(self._store.dep_conflicts) if self._store.dep_conflicts else 0,
+            ),
+            (
+                "Isolated",
+                len(self._store.isolated.select(lambda r: r.dead_file_count > 0))
+                if self._store.isolated
+                else 0,
+            ),
+            ("Impact", len(self._store.impact) if self._store.impact else 0),
+        ]
+        for name, cnt in fragments:
             status = _("report.ok") if cnt == 0 else f"{_fmt(cnt)} found"
             t.add_rows([[name, str(cnt), status]])
 
-    def load_report(self, report) -> None:
-        self._report = report
+    def load_report(self, store) -> None:
+        self._store = store
         if self.is_mounted:
             self._refresh_table()
             self._redraw_status()

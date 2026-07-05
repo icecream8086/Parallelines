@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import ResultStore
 
 
 class RedundancyAnalyzer(Analyzer):
@@ -15,32 +15,23 @@ class RedundancyAnalyzer(Analyzer):
     overridden and by whom.
     """
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
-        """Collect all redundant FileNodes from the virtual file system.
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
+        """Mark all redundant FileNodes in the store.
 
         Args:
             vfs: VirtualFileSystem instance (may be None in testing contexts).
             graph: DependencyGraph instance (unused by this analyzer).
-
-        Returns:
-            An AnalysisFragment with one item per redundant FileNode.
+            store: ResultStore to write results into.
         """
         if vfs is None:
-            return AnalysisFragment(analyzer_name="RedundancyAnalyzer", items=[])
+            return
 
-        items: list[dict] = []
         for node in vfs.get_all_files():
-            if not node.is_redundant:
-                continue
-
-            winner = vfs.get_active_file(node.virtual_path)
-            items.append(
-                {
-                    "virtual_path": node.virtual_path,
-                    "source_name": node.source_name,
-                    "priority": node.priority,
-                    "overridden_by": winner.source_name if winner else None,
-                }
-            )
-
-        return AnalysisFragment(analyzer_name="RedundancyAnalyzer", items=items)
+            if node.is_redundant:
+                store.files.update_cell(  # type: ignore[union-attr]
+                    lambda r, vp=node.virtual_path, sn=node.source_name: (  # type: ignore[misc]
+                        r.virtual_path == vp and r.source_name == sn
+                    ),
+                    "is_redundant",
+                    True,
+                )

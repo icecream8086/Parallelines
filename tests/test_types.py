@@ -4,13 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from parallelines.types import (
-    AddonManifest,
-    AnalysisFragment,
-    AnalysisReport,
-    ConflictRecord,
-    FileNode,
-)
+from parallelines.types import AddonManifest, ConflictRecord, FileNode
 
 
 class TestFileNode(unittest.TestCase):
@@ -113,34 +107,3 @@ class TestAddonManifest(unittest.TestCase):
         self.assertTrue(manifest.is_enabled)
         self.assertEqual(manifest.priority, 100)
         self.assertEqual(manifest.name, "My Cool Addon")
-
-
-class TestAnalysisReport(unittest.TestCase):
-    """Verify AnalysisReport / AnalysisFragment."""
-
-    def test_analysis_report_empty(self) -> None:
-        """An empty report should have no fragments."""
-        report = AnalysisReport()
-        self.assertEqual(report.fragments, [])
-
-    def test_analysis_fragment(self) -> None:
-        """AnalysisFragment should store analyzer name and items."""
-        fragment = AnalysisFragment(
-            analyzer_name="RedundancyAnalyzer",
-            items=[{"virtual_path": "test.txt", "source": "base"}],
-        )
-        self.assertEqual(fragment.analyzer_name, "RedundancyAnalyzer")
-        self.assertEqual(len(fragment.items), 1)
-        self.assertEqual(fragment.items[0]["virtual_path"], "test.txt")
-
-    def test_report_with_fragments(self) -> None:
-        """AnalysisReport containing multiple fragments."""
-        f1 = AnalysisFragment(analyzer_name="A", items=[{"id": 1}])
-        f2 = AnalysisFragment(analyzer_name="B", items=[])
-        report = AnalysisReport(fragments=[f1, f2])
-        self.assertEqual(len(report.fragments), 2)
-        self.assertEqual(report.fragments[0].analyzer_name, "A")
-
-
-if __name__ == "__main__":
-    unittest.main()

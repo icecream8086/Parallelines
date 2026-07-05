@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import IsolatedPackageRow
 
 
 class IsolatedPackageAnalyzer(Analyzer):
@@ -17,42 +18,36 @@ class IsolatedPackageAnalyzer(Analyzer):
     whether to clean them up.
     """
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Group all files by source and flag sources with 100 % dead files.
 
         Args:
             vfs: VirtualFileSystem instance.
             graph: DependencyGraph instance (unused by this analyzer).
-
-        Returns:
-            An AnalysisFragment with one item per source.
+            store: ResultStore to write results into.
         """
         if vfs is None:
-            return AnalysisFragment(analyzer_name="IsolatedPackageAnalyzer", items=[])
+            return
 
-        all_files = vfs.get_all_files()
+        total: Counter[str] = Counter()
+        dead: Counter[str] = Counter()
+        examples: dict[str, list[str]] = defaultdict(list)
 
-        # Count total files and dead files per source.
-        total_counter: Counter[str] = Counter()
-        dead_counter: Counter[str] = Counter()
-
-        for node in all_files:
-            total_counter[node.source_name] += 1
+        for node in vfs.get_all_files():
+            total[node.source_name] += 1
             if node.is_dead or node.is_redundant:
-                dead_counter[node.source_name] += 1
+                dead[node.source_name] += 1
+                if len(examples[node.source_name]) < 3:
+                    examples[node.source_name].append(node.virtual_path)
 
-        items: list[dict] = []
-        for source_name in sorted(total_counter):
-            total = total_counter[source_name]
-            dead = dead_counter[source_name]
-            isolated = total > 0 and dead == total
-            items.append(
-                {
-                    "source_name": source_name,
-                    "total_files": total,
-                    "dead_files": dead,
-                    "reason": "all_files_dead" if isolated else "partial",
-                }
+        rows: list[IsolatedPackageRow] = []
+        for source_name in sorted(total):
+            rows.append(
+                IsolatedPackageRow(
+                    source_name=source_name,
+                    dead_file_count=dead[source_name],
+                    example_paths=examples[source_name],
+                )
             )
 
-        return AnalysisFragment(analyzer_name="IsolatedPackageAnalyzer", items=items)
+        store.isolated = Relation.from_rows("isolated", rows)

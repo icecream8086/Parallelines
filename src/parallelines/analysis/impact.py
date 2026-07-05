@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import ImpactRow
 
 
 class ImpactAnalyzer(Analyzer):
@@ -18,48 +19,31 @@ class ImpactAnalyzer(Analyzer):
     def __init__(self, top_n: int = 20):
         self.top_n = top_n
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Compute impact for all active files and return the top N.
 
         Args:
             vfs: VirtualFileSystem instance (may be None in testing contexts).
             graph: DependencyGraph instance (may be None in testing contexts).
-
-        Returns:
-            An AnalysisFragment with up to ``top_n`` items sorted by impact
-            descending.
+            store: ResultStore to write results into.
         """
         if vfs is None or graph is None:
-            return AnalysisFragment(analyzer_name="ImpactAnalyzer", items=[])
+            return
 
-        active_files = vfs.get_all_active()
-
-        impacts: list[dict] = []
-        for node in active_files:
+        rows: list[ImpactRow] = []
+        for node in vfs.get_all_active():
             try:
-                descendants = graph.get_descendants(node.virtual_path)
-                count = len(descendants)
+                count = len(graph.get_descendants(node.virtual_path))
             except Exception:
                 count = 0
 
-            if count > 100:
-                impact_analysis = f"高影响面 — 修改将影响 {count} 个文件"
-            elif count > 10:
-                impact_analysis = "中等影响"
-            else:
-                impact_analysis = "低影响"
-
-            impacts.append(
-                {
-                    "virtual_path": node.virtual_path,
-                    "impact_count": count,
-                    "source_name": node.source_name,
-                    "impact_analysis": impact_analysis,
-                }
+            rows.append(
+                ImpactRow(
+                    virtual_path=node.virtual_path,
+                    source_name=node.source_name,
+                    impact_count=count,
+                )
             )
 
-        # Sort by impact_count descending and take the top N.
-        impacts.sort(key=lambda x: x["impact_count"], reverse=True)
-        impacts = impacts[: self.top_n]
-
-        return AnalysisFragment(analyzer_name="ImpactAnalyzer", items=impacts)
+        rows.sort(key=lambda r: r.impact_count, reverse=True)
+        store.impact = Relation.from_rows("impact", rows[: self.top_n])

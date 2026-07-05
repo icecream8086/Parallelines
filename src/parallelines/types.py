@@ -44,18 +44,3 @@ class ConflictRecord:
     conflict_files: list[dict] = field(default_factory=list)
     dependency_chain: list[str] = field(default_factory=list)
     suggestion: str = ""
-
-
-@dataclass
-class AnalysisReport:
-    """Final output of an analysis run."""
-
-    fragments: list[AnalysisFragment] = field(default_factory=list)
-
-
-@dataclass
-class AnalysisFragment:
-    """Output from a single Analyzer."""
-
-    analyzer_name: str
-    items: list[dict] = field(default_factory=list)

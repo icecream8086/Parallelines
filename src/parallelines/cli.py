@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
-from copy import deepcopy
-from datetime import datetime
 from pathlib import Path
-
-from prettytable import PrettyTable
 
 from parallelines.analysis.dead_file import DeadFileAnalyzer
 from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
-from parallelines.analysis.engine import AnalyzerEngine
 from parallelines.analysis.entry_points import (
     discover_entry_points,
     filter_entry_points,
@@ -22,10 +16,10 @@ from parallelines.analysis.impact import ImpactAnalyzer
 from parallelines.analysis.isolated import IsolatedPackageAnalyzer
 from parallelines.analysis.redundancy import RedundancyAnalyzer
 from parallelines.config import load_config, AppConfig
+from parallelines.engine import HashConflictRow, Relation, ResultStore
 from parallelines.exceptions import ParallelinesError
 from parallelines.graph.builder import GraphBuilder
-from parallelines.report.generators import generate_report
-from parallelines.types import AnalysisReport
+from parallelines.report.generators import generate_report_from_store
 from parallelines.vfs.builder import VfsBuilder
 from parallelines.vfs.external import ExternalVpkOverlay
 from parallelines.i18n import set_language, _
@@ -72,24 +66,25 @@ def _get_check_extensions(args: argparse.Namespace) -> set[str] | None:
     return exts if exts else None
 
 
-def _filter_report(report, exts: set[str] | None):
-    """Filter report fragments to only include items matching given extensions.
-    Returns the same report if exts is None (no filtering)."""
+def _apply_check_filters(store: ResultStore, args) -> None:
+    """Apply --check-* filters in-place by selecting rows from relevant relations."""
+    exts = _get_check_extensions(args)
     if exts is None:
-        return report
-    new_report = deepcopy(report)
-    for fragment in new_report.fragments:
-        fragment.items = [
-            item
-            for item in fragment.items
-            if any(
-                str(item.get(k, "")).lower().endswith(tuple(exts))
-                for k in ("virtual_path", "source_file", "depends_on", "file")
-                if k in item
+        return
+
+    ext_tuple = tuple(exts)
+
+    if store.hash_conflicts:
+        store.hash_conflicts = store.hash_conflicts.select(
+            lambda r: r.virtual_path.lower().endswith(ext_tuple)
+        )
+    if store.dep_conflicts:
+        store.dep_conflicts = store.dep_conflicts.select(
+            lambda r: (
+                r.from_path.lower().endswith(ext_tuple)
+                or r.to_path.lower().endswith(ext_tuple)
             )
-        ]
-    new_report.fragments = [f for f in new_report.fragments if f.items]
-    return new_report
+        )
 
 
 def _get_version() -> str:
@@ -305,38 +300,38 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def print_summary(report: AnalysisReport) -> None:
-    """Display a brief CLI summary using prettytable."""
-    if not report.fragments:
-        print("[parallelines] No analyzers registered.")
-        return
+def print_summary_from_store(store: ResultStore) -> None:
+    """从 ResultStore 生成 CLI 摘要表。"""
+    from prettytable import PrettyTable
 
     summary = PrettyTable()
     summary.title = "Analysis Summary"
     summary.field_names = ["Analyzer", "Issues", "Status"]
     summary.align = "l"
 
-    for fragment in report.fragments:
-        count = len(fragment.items)
+    fragments = [
+        (
+            "Redundancy",
+            store.files.select(lambda r: r.is_redundant) if store.files else None,
+        ),
+        ("DeadFile", store.files.select(lambda r: r.is_dead) if store.files else None),
+        ("HashConflict", store.hash_conflicts),
+        ("DepConflict", store.dep_conflicts),
+        (
+            "Isolated",
+            store.isolated.select(lambda r: r.dead_file_count > 0)
+            if store.isolated
+            else None,
+        ),
+        ("Impact", store.impact),
+    ]
+
+    for name, rel in fragments:
+        count = len(rel) if rel is not None else 0
         status = "OK" if count == 0 else f"{count} found"
-        summary.add_row(
-            [fragment.analyzer_name.replace("Analyzer", ""), str(count), status]
-        )
+        summary.add_row([name, str(count), status])
 
     print(summary)
-
-    # Show top items for analyzers that found issues
-    for fragment in report.fragments:
-        if not fragment.items:
-            continue
-        detail = PrettyTable()
-        detail.title = f"{fragment.analyzer_name} — Top {min(5, len(fragment.items))} of {len(fragment.items)}"
-        detail.field_names = list(fragment.items[0].keys())[:4]
-        for item in fragment.items[:5]:
-            detail.add_row([str(v)[:60] for v in list(item.values())[:4]])
-        detail.align = "l"
-        print()
-        print(detail)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -521,21 +516,20 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     else:
         logger.info("No entry points — dead file analysis will be skipped")
 
-    # 4 -- Run analyzers
-    engine = AnalyzerEngine()
-    engine.register(RedundancyAnalyzer())
-    engine.register(
-        DeadFileAnalyzer(entry_points=entry_points if entry_points else None)
-    )
-    engine.register(HashConflictAnalyzer())
-    engine.register(DependencyConflictAnalyzer())
-    engine.register(IsolatedPackageAnalyzer())
-    engine.register(ImpactAnalyzer(top_n=20))
+    # 4 -- Run analyzers via ResultStore pipeline
+    analyzers = [
+        RedundancyAnalyzer(),
+        DeadFileAnalyzer(entry_points=entry_points if entry_points else None),
+        HashConflictAnalyzer(),
+        DependencyConflictAnalyzer(),
+        IsolatedPackageAnalyzer(),
+        ImpactAnalyzer(top_n=20),
+    ]
 
     # 4a -- Addon dependency checking (requires addoninfo.txt in VFS)
     from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
 
-    engine.register(AddonDependencyAnalyzer(chain=chain))
+    analyzers.append(AddonDependencyAnalyzer(chain=chain))
 
     # 4b -- Map version conflict analysis
     if args.compare_maps:
@@ -565,31 +559,34 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
                 len(external_maps),
                 len(args.compare_maps),
             )
-            engine.register(
+            analyzers.append(
                 MapConflictAnalyzer(
                     target_maps=set(external_maps.keys()),
                     external_sources=external_maps,
                 )
             )
 
-    report = engine.run(vfs, graph)
+    store = ResultStore.from_analysis(
+        vfs=vfs,
+        graph=graph,
+        analyzers=analyzers,
+        entry_points=entry_points,
+    )
 
     # 5 -- Apply resource pollution filter (if --check-* flag given)
-    check_exts = _get_check_extensions(args)
-    if check_exts:
-        report = _filter_report(report, check_exts)
-        logger.info(
-            "Filtered to %d issues matching check scope",
-            sum(len(f.items) for f in report.fragments),
-        )
+    _apply_check_filters(store, args)
+
+    # 5b -- Sort impact by impact_count descending
+    if store.impact and store.impact.rows:
+        store.impact.rows.sort(key=lambda r: r.impact_count, reverse=True)
 
     # 6 -- Console summary
-    print_summary(report)
+    print_summary_from_store(store)
 
-    # 6 -- Save full report
+    # 7 -- Save full report
     output_dir = config.output.output_dir or "./reports"
     output_format = config.output.format or "json"
-    path = generate_report(report, output_format, output_dir)
+    path = generate_report_from_store(store, output_format, output_dir)
     logger.info("Full report saved to %s", path)
 
     return 0
@@ -638,51 +635,52 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
 
     summary = result["summary"]
 
-    # 5 -- Display summary table
-    print()
-    summary_table = PrettyTable()
-    summary_table.title = f"External VPK Analysis: {result['external_vpk']}"
-    summary_table.field_names = ["Metric", "Count"]
-    summary_table.align = "l"
-    summary_table.add_row(["Total files in VPK", summary["total_files_in_vpk"]])
-    summary_table.add_row(["Will override (external wins)", summary["will_override"]])
-    summary_table.add_row(
-        ["Will be overridden (existing wins)", summary["will_be_overridden"]]
-    )
-    summary_table.add_row(["New files (no conflict)", summary["new_files"]])
-    print(summary_table)
+    # 5 -- Build ResultStore from overlay results
+    store = ResultStore()
 
-    # Show top 10 overrides if any exist
-    if summary["will_override"] > 0:
-        override_table = PrettyTable()
-        override_table.title = f"Overrides — Top {min(10, summary['will_override'])} of {summary['will_override']}"
-        override_table.field_names = ["Virtual Path", "Existing Source", "Ext Hash"]
-        override_table.align = "l"
-        for item in result["overrides"][:10]:
-            override_table.add_row(
-                [
-                    item["virtual_path"][:70],
-                    item.get("existing_source", "")[:30],
-                    (item.get("external_hash") or "")[:12],
-                ]
+    hash_conflict_rows: list[HashConflictRow] = []
+    for item in result.get("overrides", []):
+        hash_conflict_rows.append(
+            HashConflictRow(
+                virtual_path=item["virtual_path"],
+                winner_source=result["external_vpk"],
+                loser_source=item.get("existing_source", ""),
+                winner_hash=item.get("external_hash", ""),
+                loser_hash="",
             )
-        print()
-        print(override_table)
+        )
+    for item in result.get("will_be_overridden", []):
+        hash_conflict_rows.append(
+            HashConflictRow(
+                virtual_path=item["virtual_path"],
+                winner_source=item.get("existing_source", ""),
+                loser_source=result["external_vpk"],
+                winner_hash="",
+                loser_hash=item.get("external_hash", ""),
+            )
+        )
 
-    # 6 -- Save JSON report
+    if hash_conflict_rows:
+        store.hash_conflicts = Relation[HashConflictRow].from_rows(
+            "hash_conflicts", hash_conflict_rows
+        )
+
+    # 6 -- Console summary
+    logger.info(
+        "External VPK summary: %d files total, %d override, %d overridden, %d new",
+        summary["total_files_in_vpk"],
+        summary["will_override"],
+        summary["will_be_overridden"],
+        summary["new_files"],
+    )
+    print_summary_from_store(store)
+
+    # 7 -- Save report
     output_dir = config.output.output_dir or "./reports"
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_format = config.output.format or "json"
+    path = generate_report_from_store(store, output_format, output_dir)
+    logger.info("External VPK report saved to %s", path)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_filename = f"external_vpk_report_{timestamp}.json"
-    report_path = output_path / report_filename
-
-    json_text = json.dumps(result, indent=2, ensure_ascii=False)
-    json_text = json_text.encode("utf-8", errors="replace").decode("utf-8")
-    report_path.write_text(json_text, encoding="utf-8")
-
-    logger.info("External VPK report saved to %s", report_path)
     return 0
 
 

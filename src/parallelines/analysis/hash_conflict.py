@@ -1,43 +1,12 @@
-"""HashConflictAnalyzer — detect files with same virtual path but different content hashes.
-
-Severity classification based on conflict type and source priority:
-
-- **warning**: addon vs addon conflict (both priority < 100, hashes differ)
-- **info**: engine/base file overridden by addon (normal mod behaviour)
-- **silent**: multiple sources but all share the same hash (benign overlap)
-"""
+"""HashConflictAnalyzer — detect files with same virtual path but different content hashes."""
 
 from __future__ import annotations
 
 from collections import defaultdict
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
-
-# Source names that are considered "engine" rather than "addon".
-# Game VPKs are typically named pakNN_dir.vpk; loose game files use "base".
-_ENGINE_SOURCE_PREFIXES: set[str] = {"pak", "base"}
-
-
-def _is_engine_source(source_name: str) -> bool:
-    """Return True if *source_name* looks like an engine / base game source."""
-    return any(source_name.lower().startswith(p) for p in _ENGINE_SOURCE_PREFIXES)
-
-
-def _classify(nodes: list, hash_differ: bool) -> str:
-    """Classify a cross-source path into warning / info / silent."""
-    if not hash_differ:
-        return "silent"
-
-    # If the winning node is an engine source and there are addon files
-    # behind it with a different hash, this is normal mod overriding → info.
-    enabled = [n for n in nodes if n.is_enabled]
-    if enabled:
-        winner = max(enabled, key=lambda n: n.priority)
-        if _is_engine_source(winner.source_name):
-            return "info"
-
-    return "warning"
+from parallelines.engine import Relation, ResultStore
+from parallelines.engine.schema import HashConflictRow
 
 
 class HashConflictAnalyzer(Analyzer):
@@ -52,53 +21,47 @@ class HashConflictAnalyzer(Analyzer):
     conflicts (warning) from benign engine-file overrides (info).
     """
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Group all FileNodes by virtual_path and flag cross-source hash mismatches.
 
         Args:
             vfs: VirtualFileSystem instance (may be None in testing contexts).
             graph: DependencyGraph instance (unused by this analyzer).
-
-        Returns:
-            An AnalysisFragment with one item per virtual_path that appears in
-            multiple sources.
+            store: ResultStore to write results into.
         """
         if vfs is None:
-            return AnalysisFragment(analyzer_name="HashConflictAnalyzer", items=[])
+            return
 
         by_path: dict[str, list] = defaultdict(list)
         for node in vfs.get_all_files():
             by_path[node.virtual_path].append(node)
 
-        items: list[dict] = []
+        rows: list[HashConflictRow] = []
         for virtual_path, nodes in by_path.items():
             sources = {n.source_name for n in nodes}
             if len(sources) < 2:
                 continue
 
-            enabled_hashes = {
-                n.file_hash for n in nodes if n.is_enabled and n.file_hash is not None
-            }
-            hash_differ = len(enabled_hashes) > 1
+            enabled = [n for n in nodes if n.is_enabled and n.file_hash]
+            hashes = {n.file_hash for n in enabled}
+            if len(hashes) <= 1:
+                continue
 
-            active = vfs.get_active_file(virtual_path)
-            active_source = active.source_name if active else None
-            severity = _classify(nodes, hash_differ)
+            sorted_nodes = sorted(enabled, key=lambda n: n.priority, reverse=True)
+            winner = sorted_nodes[0]
+            for loser in sorted_nodes[1:]:
+                rows.append(
+                    HashConflictRow(
+                        virtual_path=virtual_path,
+                        winner_source=winner.source_name,
+                        loser_source=loser.source_name,
+                        winner_hash=winner.file_hash or "",
+                        loser_hash=loser.file_hash or "",
+                    )
+                )
 
-            if hash_differ:
-                analysis_text = "同路径文件来自不同来源且哈希不一致，存在冲突风险"
+        if rows:
+            if store.hash_conflicts is None:
+                store.hash_conflicts = Relation.from_rows("hash_conflicts", rows)
             else:
-                analysis_text = "同路径文件来自不同来源但哈希一致，无冲突"
-
-            items.append(
-                {
-                    "virtual_path": virtual_path,
-                    "sources": ",".join(sorted(sources)),
-                    "hash_differ": hash_differ,
-                    "active_source": active_source,
-                    "severity": severity,
-                    "analysis": analysis_text,
-                }
-            )
-
-        return AnalysisFragment(analyzer_name="HashConflictAnalyzer", items=items)
+                store.hash_conflicts.rows.extend(rows)

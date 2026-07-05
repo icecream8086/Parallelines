@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from parallelines.analysis.base import Analyzer
-from parallelines.types import AnalysisFragment
+from parallelines.engine import ResultStore
 
 
 class DeadFileAnalyzer(Analyzer):
@@ -25,39 +25,28 @@ class DeadFileAnalyzer(Analyzer):
         """
         self.entry_points = entry_points
 
-    def analyze(self, vfs, graph) -> AnalysisFragment:
-        """Find and mark active files not reachable from the entry points.
+    def analyze(self, vfs, graph, store: ResultStore) -> None:
+        """Mark dead (unreachable) files in the store.
 
         Args:
             vfs: VirtualFileSystem instance.
             graph: DependencyGraph instance.
-
-        Returns:
-            An AnalysisFragment with one item per dead file.
+            store: ResultStore to write results into.
         """
-        if vfs is None or graph is None:
-            return AnalysisFragment(analyzer_name="DeadFileAnalyzer", items=[])
-
-        active_files = vfs.get_all_active()
-
-        # No explicit entry points → everything is assumed live.
-        if self.entry_points is None:
-            return AnalysisFragment(analyzer_name="DeadFileAnalyzer", items=[])
+        if vfs is None or graph is None or self.entry_points is None:
+            return
 
         # Compute the set of live (reachable) virtual paths.
         reachable = graph.reachable_from_all(self.entry_points)
         live = self.entry_points | reachable
 
         # Anything active but not in the live set is dead.
-        items: list[dict] = []
-        for node in active_files:
+        for node in vfs.get_all_active():
             if node.virtual_path not in live:
-                node.is_dead = True
-                items.append(
-                    {
-                        "virtual_path": node.virtual_path,
-                        "source_name": node.source_name,
-                    }
+                store.files.update_cell(  # type: ignore[union-attr]
+                    lambda r, vp=node.virtual_path, sn=node.source_name: (  # type: ignore[misc]
+                        r.virtual_path == vp and r.source_name == sn
+                    ),
+                    "is_dead",
+                    True,
                 )
-
-        return AnalysisFragment(analyzer_name="DeadFileAnalyzer", items=items)
