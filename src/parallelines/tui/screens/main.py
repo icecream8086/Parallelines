@@ -11,7 +11,7 @@ from typing import Any
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Static, DataTable
+from textual.widgets import Static, DataTable, ProgressBar
 
 from parallelines.engine import ResultStore
 
@@ -35,13 +35,24 @@ _HELP_TEXT = """
 """
 
 
+_PROGRESS_MAP: dict[str, int] = {
+    "Building VFS...": 20,
+    "Building graph...": 50,
+    "Running analyzers...": 80,
+}
+
+
 def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
     """Synchronous data pipeline — runs in a thread, reports progress via callback."""
     from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
+    from parallelines.analysis.cascade_detector import CascadeDetector
+    from parallelines.analysis.cycle_detector import CycleDetector
     from parallelines.analysis.dead_file import DeadFileAnalyzer
     from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
     from parallelines.analysis.entry_points import discover_entry_points
+    from parallelines.analysis.global_script_detector import GlobalScriptDetector
     from parallelines.analysis.hash_conflict import HashConflictAnalyzer
+    from parallelines.analysis.implicit_dep_detector import ImplicitDepDetector
     from parallelines.analysis.impact import ImpactAnalyzer
     from parallelines.analysis.isolated import IsolatedPackageAnalyzer
     from parallelines.analysis.redundancy import RedundancyAnalyzer
@@ -76,6 +87,10 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
         IsolatedPackageAnalyzer(),
         ImpactAnalyzer(top_n=20),
         AddonDependencyAnalyzer(chain=chain),
+        CycleDetector(),
+        CascadeDetector(),
+        GlobalScriptDetector(),
+        ImplicitDepDetector(),
     ]
 
     store = ResultStore.from_analysis(
@@ -109,6 +124,7 @@ class MainScreen(Screen):
     }
     #status { padding: 0 1; }
     #sep { color: $surface; }
+    #progress { margin: 0 1; }
     #analyzers { margin: 0 1; height: 1fr; }
     #help {
         margin: 0 2; padding: 1 2;
@@ -137,6 +153,7 @@ class MainScreen(Screen):
         yield Static(id="header")
         yield Static(id="status")
         yield Static("─" * 60, id="sep")
+        yield ProgressBar(total=100, id="progress", show_eta=False)
         yield Static(_HELP_TEXT, id="help")
         yield DataTable(id="analyzers")
 
@@ -147,6 +164,8 @@ class MainScreen(Screen):
             _("analyzer.redundancy"), _("report.issues"), _("report.status")
         )
         self._refresh_table()
+        if self._game_root and not self._store:
+            self.action_run_analysis()
 
     # ── Actions ─────────────────────────────────────────────
 
@@ -201,15 +220,20 @@ class MainScreen(Screen):
                 self._running = False
             exc = fut.exception()
             if exc:
+                self._update_progress(0)
                 self._redraw_status(msg=f"Error: {exc}")
                 return
             self._store = fut.result()
             elapsed = time.perf_counter() - self._t0
             self._refresh_table()
+            self._update_progress(100)
             self._redraw_status(msg=f"Done ({elapsed:.1f}s)")
 
         def _status(msg: str) -> None:
             self.app.call_from_thread(self._redraw_status, msg=msg)
+            progress = _PROGRESS_MAP.get(msg)
+            if progress is not None:
+                self.app.call_from_thread(self._update_progress, progress)
 
         self._t0 = time.perf_counter()
         loop = asyncio.get_event_loop()
@@ -229,29 +253,26 @@ class MainScreen(Screen):
         )
 
     def _redraw_status(self, msg: str = "") -> None:
-        parts = []
-        if self._store:
-            total = 0
-            if self._store.files:
-                total += len(self._store.files.select(lambda r: r.is_redundant))
-                total += len(self._store.files.select(lambda r: r.is_dead))
-            for rel in (
-                self._store.hash_conflicts,
-                self._store.dep_conflicts,
-                self._store.impact,
-            ):
-                if rel:
-                    total += len(rel)
-            if self._store.isolated:
-                total += len(
-                    self._store.isolated.select(lambda r: r.dead_file_count > 0)
-                )
-            parts.append(f"issues:{_fmt(total)}")
+        parts = [f"Game: {self._game}"]
         if msg:
             parts.append(msg)
-        if self._game_root:
-            parts.append(f"Game:{self._game}")
+        elif self._store:
+            total = 0
+            if self._store.files:
+                total += len(self._store.files.select(lambda r: r.is_dead))
+                total += len(self._store.files.select(lambda r: r.is_redundant))
+            if self._store.hash_conflicts:
+                total += len(self._store.hash_conflicts)
+            if self._store.dep_conflicts:
+                total += len(self._store.dep_conflicts)
+            parts.append(f"Total issues: {_fmt(total)}")
         self.query_one("#status", Static).update("  |  ".join(parts))
+
+    def _update_progress(self, value: int) -> None:
+        try:
+            self.query_one("#progress", ProgressBar).update(progress=value)
+        except Exception:
+            pass
 
     def _update_table_lang(self) -> None:
         """Update table column labels to current language without clearing rows."""

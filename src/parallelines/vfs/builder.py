@@ -40,19 +40,19 @@ logger = logging.getLogger(__name__)
 def _parse_vpk_worker(args: tuple) -> tuple:
     """Worker function for ProcessPool. Standalone to support pickling.
 
-    Receieves ``(vpk_path_str, name, priority)`` and returns
-    ``(name, priority, entries_list, error_or_none)``. Returns the
+    Receieves ``(vpk_path_str, name, priority, is_disabled)`` and returns
+    ``(name, priority, entries_list, error_or_none, is_disabled)``. Returns the
     exception message as the fourth element when parsing fails so
     the caller can log the failure reason.
     """
-    vpk_path_str, name, priority = args
+    vpk_path_str, name, priority, is_disabled = args
     try:
         from parallelines.parsers.vpk_parser import parse_vpk_index
 
         entries = parse_vpk_index(vpk_path_str)
     except Exception as exc:
-        return (name, priority, [], str(exc))
-    return (name, priority, entries, None)
+        return (name, priority, [], str(exc), is_disabled)
+    return (name, priority, entries, None, is_disabled)
 
 
 class VfsBuilder:
@@ -80,6 +80,11 @@ class VfsBuilder:
         self.num_workers = num_workers or (
             self.config.general.num_workers if self.config else 0
         )
+        if self.num_workers == 0:
+            import os
+
+            cpu_count = os.cpu_count() or 0
+            self.num_workers = max(1, cpu_count - 1) if cpu_count > 2 else 1
 
         cache_dir = self.config.general.cache_dir or "./cache"
         self._cache = CacheManager(Path(cache_dir))
@@ -193,7 +198,9 @@ class VfsBuilder:
         addon_roots: list[str],
     ) -> None:
         """Full rebuild: scan VPKs and loose files from all game directories."""
-        vpk_queue: list[tuple[str, str, int]] = []  # (path_str, name, priority)
+        vpk_queue: list[
+            tuple[str, str, int, bool]
+        ] = []  # (path_str, name, priority, is_disabled)
 
         base_priority = 100
         for i, game_dir in enumerate(game_dirs):
@@ -203,7 +210,7 @@ class VfsBuilder:
             priority = base_priority - i
 
             for vpk_file in sorted(resolved.glob("*_dir.vpk")):
-                vpk_queue.append((str(vpk_file), vpk_file.name, priority))
+                vpk_queue.append((str(vpk_file), vpk_file.name, priority, False))
 
             # Skip scanning loose files in directories outside game_root (e.g., hl2)
             try:
@@ -221,7 +228,14 @@ class VfsBuilder:
             if resolved is None or not resolved.is_dir():
                 continue
             for vpk_file in sorted(resolved.glob("*.vpk")):
-                vpk_queue.append((str(vpk_file), vpk_file.name, addon_priority))
+                is_disabled = vpk_file.stem.endswith("_disabled")
+                vpk_queue.append(
+                    (str(vpk_file), vpk_file.name, addon_priority, is_disabled)
+                )
+                addon_priority -= 1
+
+            for vpk_file in sorted(resolved.glob("*.vpk_disabled")):
+                vpk_queue.append((str(vpk_file), vpk_file.name, addon_priority, True))
                 addon_priority -= 1
 
         if self.debug:
@@ -306,6 +320,7 @@ class VfsBuilder:
                     file_size=int(row.get("file_size", 0)),
                     file_hash=row.get("file_hash"),
                     is_enabled=bool(row.get("is_enabled", True)),
+                    is_disabled_addon=bool(row.get("is_disabled_addon", False)),
                 )
                 vfs.add_file(node)
 
@@ -346,6 +361,7 @@ class VfsBuilder:
                         "file_size": node.file_size,
                         "file_hash": node.file_hash or "",
                         "is_enabled": node.is_enabled,
+                        "is_disabled_addon": node.is_disabled_addon,
                     }
                 )
 
@@ -434,7 +450,11 @@ class VfsBuilder:
     # ------------------------------------------------------------------
 
     def _ingest_vpk(
-        self, vfs: VirtualFileSystem, vpk_path: Path, priority: int
+        self,
+        vfs: VirtualFileSystem,
+        vpk_path: Path,
+        priority: int,
+        is_disabled_addon: bool = False,
     ) -> None:
         """Parse a single VPK and add all its files to the VFS."""
         try:
@@ -444,7 +464,9 @@ class VfsBuilder:
             return
 
         source_name = vpk_path.name
-        self._add_vpk_entries(vfs, source_name, priority, entries)
+        self._add_vpk_entries(
+            vfs, source_name, priority, entries, is_disabled_addon=is_disabled_addon
+        )
         logger.debug("Ingested %s: %d files", source_name, len(entries))
 
     def _add_vpk_entries(
@@ -453,6 +475,7 @@ class VfsBuilder:
         source_name: str,
         priority: int,
         entries: list[dict],
+        is_disabled_addon: bool = False,
     ) -> None:
         """Add parsed VPK entries to the VFS. Must be called from the main process."""
         for entry in entries:
@@ -463,6 +486,7 @@ class VfsBuilder:
                 priority=priority,
                 file_size=entry.get("file_size", 0),
                 file_hash=entry.get("crc"),
+                is_disabled_addon=is_disabled_addon,
             )
             vfs.add_file(node)
 
@@ -503,14 +527,16 @@ class VfsBuilder:
             )
             with Pool(n) as pool:
                 failed_count = 0
-                for name, priority, entries, error in pool.imap_unordered(
+                for name, priority, entries, error, is_disabled in pool.imap_unordered(
                     _parse_vpk_worker, vpk_queue
                 ):
                     if error:
                         logger.warning("Failed to parse VPK %s: %s", name, error)
                         failed_count += 1
                     if entries:
-                        self._add_vpk_entries(vfs, name, priority, entries)
+                        self._add_vpk_entries(
+                            vfs, name, priority, entries, is_disabled_addon=is_disabled
+                        )
                 if failed_count:
                     logger.warning(
                         "%d VPK(s) failed to parse during parallel ingestion",
@@ -523,8 +549,10 @@ class VfsBuilder:
                 )
             else:
                 vpk_iter = vpk_queue
-            for path_str, _name, priority in vpk_iter:
-                self._ingest_vpk(vfs, Path(path_str), priority)
+            for path_str, _name, priority, is_disabled in vpk_iter:
+                self._ingest_vpk(
+                    vfs, Path(path_str), priority, is_disabled_addon=is_disabled
+                )
 
     def _scan_directory(
         self,

@@ -8,13 +8,18 @@ import networkx as nx
 
 from parallelines.engine.schema import (
     AddonRow,
+    CascadeOverrideRow,
     DepConflictRow,
+    DependencyCycleRow,
     DependencyRow,
     EntryPointRow,
     FileRow,
+    GlobalScriptRow,
     HashConflictRow,
     ImpactRow,
+    ImplicitDepRow,
     IsolatedPackageRow,
+    ModTypeRow,
 )
 
 T = TypeVar("T")
@@ -325,6 +330,11 @@ class ResultStore:
         self.impact: Relation[ImpactRow] | None = None
         self.entry_points: Relation[EntryPointRow] | None = None
         self.graph: nx.DiGraph | None = None
+        self.dependency_cycles: Relation[DependencyCycleRow] | None = None
+        self.cascade_overrides: Relation[CascadeOverrideRow] | None = None
+        self.global_scripts: Relation[GlobalScriptRow] | None = None
+        self.implicit_deps: Relation[ImplicitDepRow] | None = None
+        self.mod_types: Relation[ModTypeRow] | None = None
 
     @classmethod
     def from_analysis(
@@ -366,6 +376,8 @@ class ResultStore:
                         file_size=node.file_size,
                         is_active=not node.is_redundant,
                         is_redundant=node.is_redundant,
+                        is_enabled=node.is_enabled,
+                        is_disabled_addon=getattr(node, "is_disabled_addon", False),
                     )
                 )
             store.files = Relation[FileRow].from_rows("files", file_rows)
@@ -450,6 +462,11 @@ class ResultStore:
             "isolated",
             "impact",
             "entry_points",
+            "dependency_cycles",
+            "cascade_overrides",
+            "global_scripts",
+            "implicit_deps",
+            "mod_types",
         ):
             rel = getattr(self, attr, None)
             if rel is not None:

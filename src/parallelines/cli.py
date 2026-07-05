@@ -7,6 +7,11 @@ from pathlib import Path
 
 from parallelines.analysis.dead_file import DeadFileAnalyzer
 from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
+from parallelines.analysis.mod_classify import ModClassifier
+from parallelines.analysis.cycle_detector import CycleDetector
+from parallelines.analysis.cascade_detector import CascadeDetector
+from parallelines.analysis.global_script_detector import GlobalScriptDetector
+from parallelines.analysis.implicit_dep_detector import ImplicitDepDetector
 from parallelines.analysis.entry_points import (
     discover_entry_points,
     filter_entry_points,
@@ -296,6 +301,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["highest", "lowest"],
         help="Simulated priority for the external vpk (used with --external)",
     )
+    parser.add_argument(
+        "--sv-pure",
+        type=str,
+        default=None,
+        metavar="WHITELIST",
+        help="Path to pure_server_whitelist.txt for sv_pure filtering",
+    )
 
     return parser
 
@@ -386,6 +398,10 @@ def _main(argv: list[str] | None = None) -> int:
     else:
         num_workers = config.general.num_workers
 
+    # Write resolved worker count back to config so downstream components
+    # (e.g. VfsBuilder) see the resolved value rather than the raw one.
+    config.general.num_workers = num_workers
+
     logging.basicConfig(
         level=getattr(logging, config.general.log_level.upper(), logging.INFO),
         format="%(levelname)s %(name)s: %(message)s",
@@ -431,6 +447,104 @@ def _main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def _parse_memory_limit(limit_str: str) -> int | None:
+    """Parse a memory limit string into bytes.
+
+    Accepts formats like ``"4GB"``, ``"2048MB"``, ``"0"`` (no limit).
+    Returns ``None`` if the string is empty, ``0`` if explicitly disabled,
+    or the byte count otherwise.
+    """
+    if not limit_str:
+        return None
+    limit_str = limit_str.strip().upper()
+    if limit_str == "0":
+        return 0
+    if limit_str.endswith("GB"):
+        try:
+            return int(limit_str.removesuffix("GB")) * 1_073_741_824
+        except ValueError:
+            return None
+    if limit_str.endswith("MB"):
+        try:
+            return int(limit_str.removesuffix("MB")) * 1_048_576
+        except ValueError:
+            return None
+    if limit_str.endswith("KB"):
+        try:
+            return int(limit_str.removesuffix("KB")) * 1024
+        except ValueError:
+            return None
+    try:
+        return int(limit_str)
+    except ValueError:
+        return None
+
+
+def _check_memory_available(config: AppConfig, logger: logging.Logger) -> None:
+    """Log a warning if ``memory_limit`` is set but cannot be verified.
+
+    This is purely advisory — actual memory enforcement is left to the OS.
+    """
+    raw = config.general.memory_limit
+    if not raw:
+        return
+    limit_bytes = _parse_memory_limit(raw)
+    if limit_bytes is None:
+        logger.warning("Unrecognised memory limit format '%s' — ignoring", raw)
+        return
+    if limit_bytes == 0:
+        return  # explicitly disabled
+
+    # Try optional psutil first, then platform-specific fallbacks
+    mem_available: int | None = None
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        mem_available = psutil.virtual_memory().available
+    except ImportError:
+        pass
+
+    if mem_available is None and sys.platform == "win32":
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            mem_status_buf = (ctypes.c_uint8 * 64)()
+            # MEMORYSTATUSEX structure: 64 bytes, dwLength + state fields
+            ctypes.c_uint64.from_buffer(mem_status_buf).value = 64
+            if kernel32.GlobalMemoryStatusEx(mem_status_buf):
+                # ullAvailPhys is at offset 8+8 = 16 on x64
+                mem_available = ctypes.c_uint64.from_buffer(mem_status_buf, 16).value
+        except Exception:
+            pass
+
+    if mem_available is None and sys.platform == "linux":
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            mem_available = int(parts[1]) * 1024
+                        break
+        except Exception:
+            pass
+
+    if mem_available is not None and limit_bytes > mem_available:
+        logger.warning(
+            "Memory limit (%s) exceeds available memory (%s MB) — "
+            "system may swap or OOM",
+            raw,
+            round(mem_available / 1_048_576),
+        )
+    elif mem_available is not None and limit_bytes > mem_available * 0.8:
+        logger.info(
+            "Memory limit (%s) is close to available memory (%s MB)",
+            raw,
+            round(mem_available / 1_048_576),
+        )
+
+
 def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     """Run full analysis: build VFS, build dep graph, run analyzers, output report."""
     game_root = Path(config.general.game_root).resolve()
@@ -438,10 +552,21 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         logger.error("gameinfo.txt not found in %s", game_root)
         return 1
 
+    # 0 -- Resolve resource limits
+    num_workers = config.general.num_workers
+    if args.nolimit:
+        num_workers = 0  # auto = all cores
+    elif args.cpu is not None:
+        num_workers = args.cpu
+
+    _check_memory_available(config, logger)
+
     # 1 -- Build VFS (with optional cache)
     use_cache = not getattr(args, "no_cache", False)
 
-    builder = VfsBuilder(game_root, config, use_cache=use_cache)
+    builder = VfsBuilder(
+        game_root, config, use_cache=use_cache, num_workers=num_workers
+    )
 
     if getattr(args, "clean_cache", False):
         builder.invalidate_cache()
@@ -517,6 +642,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         logger.info("No entry points — dead file analysis will be skipped")
 
     # 4 -- Run analyzers via ResultStore pipeline
+    base_paths = {n.virtual_path for n in vfs.get_all_active() if n.source_type == "game"} if vfs else set()
     analyzers = [
         RedundancyAnalyzer(),
         DeadFileAnalyzer(entry_points=entry_points if entry_points else None),
@@ -524,6 +650,11 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         DependencyConflictAnalyzer(),
         IsolatedPackageAnalyzer(),
         ImpactAnalyzer(top_n=20),
+        CycleDetector(),
+        CascadeDetector(),
+        GlobalScriptDetector(),
+        ImplicitDepDetector(),
+        ModClassifier(base_paths=base_paths),
     ]
 
     # 4a -- Addon dependency checking (requires addoninfo.txt in VFS)
@@ -574,6 +705,29 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         addon_manifests=None,
     )
 
+    # 4c -- sv_pure whitelist integration
+    whitelist_path = args.sv_pure or config.entry_points.pure_server_whitelist_path
+    if whitelist_path:
+        from parallelines.analysis.pure_whitelist import (
+            filter_vfs_by_whitelist,
+            load_pure_whitelist,
+        )
+
+        whitelist = load_pure_whitelist(whitelist_path)
+        if whitelist:
+            allowed_nodes = filter_vfs_by_whitelist(vfs.get_all_files(), whitelist)
+            allowed_paths = {n.virtual_path for n in allowed_nodes}
+            blocked_count = 0
+            for fr in store.files.rows:
+                if fr.virtual_path not in allowed_paths:
+                    fr.is_pure_allowed = False
+                    blocked_count += 1
+            logger.info(
+                "sv_pure whitelist applied: %d allowed, %d blocked",
+                len(allowed_nodes),
+                blocked_count,
+            )
+
     # 5 -- Apply resource pollution filter (if --check-* flag given)
     _apply_check_filters(store, args)
 
@@ -601,7 +755,12 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
         return 1
 
     # 1 -- Build base VFS (use cache for performance)
-    builder = VfsBuilder(game_root, config, use_cache=True)
+    builder = VfsBuilder(
+        game_root,
+        config,
+        use_cache=True,
+        num_workers=config.general.num_workers,
+    )
     logger.info(
         "Building base VFS from '%s' (game=%s) ...", game_root, config.general.game
     )

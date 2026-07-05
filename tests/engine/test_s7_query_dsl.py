@@ -785,6 +785,31 @@ class TestExecutorJoin:
         result = QueryExecutor.execute(q, local_store)
         assert len(result) == 0
 
+    def test_execute_left_join(self, store: ResultStore):
+        """LEFT JOIN should preserve all left-side rows, filling NULL for unmatched."""
+        conflicts_rel = Relation.from_rows(
+            "hash_conflicts",
+            [HashConflictRow("b.txt", "addon_x", "base", "def", "abc")],
+        )
+        store.hash_conflicts = conflicts_rel
+        q = Query(
+            [ColumnRef("virtual_path"), ColumnRef("source_name"), ColumnRef("winner_source")],
+            Source(relation="files"),
+            join=JoinClause(
+                type="left",
+                with_source=Source(relation="hash_conflicts"),
+                on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
+            ),
+        )
+        result = QueryExecutor.execute(q, store)
+        # 4 files, 1 hash conflict → 4 rows (3 with None winner_source)
+        assert len(result) == 4
+        by_path = {r[0]: r[2] for r in result.rows}
+        assert by_path["b.txt"] == "addon_x"
+        assert by_path["a.txt"] is None
+        assert by_path["c.txt"] is None
+        assert by_path["d.txt"] is None
+
 
 class TestExecutorGroupBy:
     def test_execute_group_by_count(self, store: ResultStore):
@@ -801,6 +826,21 @@ class TestExecutorGroupBy:
         rows = {r[0]: r[1] for r in result.rows}
         assert rows["game"] == 2
         assert rows["addon"] == 2
+
+    def test_execute_group_by_sum(self, store: ResultStore):
+        """Group by with sum aggregation on file_size."""
+        q = Query(
+            [ColumnRef("source_type"), ColumnRef("total_size")],
+            Source(relation="files"),
+            group_by=GroupByClause(
+                columns=[ColumnRef("source_type")],
+                aggregations={"total_size": ["sum", "file_size"]},
+            ),
+        )
+        result = QueryExecutor.execute(q, store)
+        rows = {r[0]: r[1] for r in result.rows}
+        assert rows["game"] == 3072  # 1024 + 2048
+        assert rows["addon"] == 768  # 512 + 256
 
 
 class TestExecutorOrderBy:

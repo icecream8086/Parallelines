@@ -23,6 +23,7 @@ class FileNode:
     dependencies: set[str] = field(default_factory=set)
     is_dead: bool = False
     is_redundant: bool = False
+    is_disabled_addon: bool = False
 
 
 @dataclass

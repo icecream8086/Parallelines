@@ -91,13 +91,22 @@ class QueryExecutor:
 
         if join_type == "inner":
             return relation.join(with_rel, on=on_col)
-        if join_type in ("left", "right", "full"):
-            # Degrade right/full to left join (R6)
-            if join_type == "right":
-                # Swap the relations for right → left
-                return with_rel.join(relation, on=on_col)
-            # left / full: do inner join (full not natively supported)
-            return relation.join(with_rel, on=on_col)
+        if join_type == "left":
+            return relation.join_left(with_rel, on=on_col)
+        if join_type == "right":
+            return with_rel.join_left(relation, on=on_col)
+        if join_type == "full":
+            left = relation.join_left(with_rel, on=on_col)
+            right = with_rel.join_left(relation, on=on_col)
+            seen: set = set()
+            merged: list = []
+            for row in left.rows:
+                merged.append(row)
+                seen.add(tuple(row[: len(relation.columns)]))
+            for row in right.rows:
+                if tuple(row[: len(with_rel.columns)]) not in seen:
+                    merged.append(row)
+            return Relation(name=f"{relation.name}⟗{with_rel.name}", columns=left.columns, rows=merged)
         raise ValueError(f"Unknown join type: {join_type}")
 
     @staticmethod
@@ -124,31 +133,31 @@ class QueryExecutor:
         agg_spec = group_clause.aggregations
 
         agg_fns: dict[str, callable] = {}
-        for agg_name, agg_type in agg_spec.items():
-            if agg_type == "count":
-                agg_fns[agg_name] = len
-            elif agg_type == "sum":
-                agg_fns[agg_name] = lambda rows, _col=agg_name: sum(
-                    float(getattr(r, _col)) if hasattr(r, _col) else 0.0 for r in rows
-                )
-            elif agg_type == "avg":
-                agg_fns[agg_name] = lambda rows, _col=agg_name: (
-                    sum(
-                        float(getattr(r, _col)) if hasattr(r, _col) else 0.0
-                        for r in rows
+        for agg_name, agg_spec_val in agg_spec.items():
+            # Two formats:
+            #   "count"             → simple count
+            #   ["sum", "file_size"] → aggregation with source column
+            if isinstance(agg_spec_val, str):
+                agg_fns[agg_name] = len  # count
+            elif isinstance(agg_spec_val, list):
+                agg_type, source_col = agg_spec_val[0], agg_spec_val[1]
+                if agg_type == "sum":
+                    agg_fns[agg_name] = lambda rows, _col=source_col: sum(
+                        float(getattr(r, _col)) if hasattr(r, _col) else 0.0 for r in rows
                     )
-                    / len(rows)
-                    if rows
-                    else 0.0
-                )
-            elif agg_type == "min":
-                agg_fns[agg_name] = lambda rows, _col=agg_name: min(
-                    getattr(r, _col) if hasattr(r, _col) else 0 for r in rows
-                )
-            elif agg_type == "max":
-                agg_fns[agg_name] = lambda rows, _col=agg_name: max(
-                    getattr(r, _col) if hasattr(r, _col) else 0 for r in rows
-                )
+                elif agg_type == "avg":
+                    agg_fns[agg_name] = lambda rows, _col=source_col: (
+                        sum(float(getattr(r, _col)) if hasattr(r, _col) else 0.0 for r in rows)
+                        / len(rows) if rows else 0.0
+                    )
+                elif agg_type == "min":
+                    agg_fns[agg_name] = lambda rows, _col=source_col: min(
+                        getattr(r, _col) if hasattr(r, _col) else 0 for r in rows
+                    )
+                elif agg_type == "max":
+                    agg_fns[agg_name] = lambda rows, _col=source_col: max(
+                        getattr(r, _col) if hasattr(r, _col) else 0 for r in rows
+                    )
 
         return relation.group_by(group_col, agg_fns)
 

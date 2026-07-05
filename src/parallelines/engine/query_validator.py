@@ -129,9 +129,9 @@ class QueryValidator:
             )
 
         # R6 — Join type degradation (warn)
-        if query.join is not None and query.join.type in ("right", "full"):
+        if query.join is not None and query.join.type == "full":
             errors.append(
-                f"R6: Join type '{query.join.type}' is not natively supported; will be degraded to left join"
+                "R6: Full outer join is not natively supported; will be emulated as left ∪ right union"
             )
 
         return errors
