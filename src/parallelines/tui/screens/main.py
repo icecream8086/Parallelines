@@ -83,6 +83,7 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
         graph=graph,
         analyzers=analyzers,
         entry_points=entries,
+        addon_manifests=None,
     )
     return store
 

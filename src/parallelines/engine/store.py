@@ -20,6 +20,19 @@ from parallelines.engine.schema import (
 T = TypeVar("T")
 
 
+def _classify_entry_point(path: str) -> str:
+    """Classify an entry point path into a source_type label."""
+    if "manifest" in path.lower():
+        return "manifest"
+    if path.endswith(".bsp"):
+        return "map"
+    if path.endswith(".nut") or path.startswith("scripts/vscripts/"):
+        return "script"
+    if path in ("cfg/game.cfg", "cfg/autoexec.cfg", "gameinfo.txt"):
+        return "script"
+    return "user_specified"
+
+
 class Relation(Generic[T]):
     """类型化关系表。内部是 list[T]，支持按列 hash index。"""
 
@@ -216,6 +229,7 @@ class ResultStore:
         graph,
         analyzers: list,
         entry_points: set[str] | None = None,
+        addon_manifests: list | None = None,
     ) -> ResultStore:
         """Orchestrate the full analysis pipeline.
 
@@ -227,6 +241,7 @@ class ResultStore:
             graph: DependencyGraph instance.
             analyzers: List of Analyzer instances to run.
             entry_points: Optional set of entry point virtual paths.
+            addon_manifests: Optional list of AddonManifest objects.
 
         Returns:
             A populated ResultStore instance.
@@ -256,16 +271,42 @@ class ResultStore:
             store.entry_points = Relation[EntryPointRow].from_rows(
                 "entry_points",
                 [
-                    EntryPointRow(virtual_path=p, source_type="user_specified")
+                    EntryPointRow(virtual_path=p, source_type=_classify_entry_point(p))
                     for p in entry_points
                 ],
             )
 
-        # ── 3. Store graph reference ────────────────────────────────────
+        # ── 3. Populate dependencies from graph edges ───────────────────
+        if graph is not None:
+            edge_rows: list[DependencyRow] = []
+            for src, dst in graph.graph.edges():
+                src_node = vfs.get_active_file(src) if vfs else None
+                edge_rows.append(
+                    DependencyRow(
+                        from_path=src,
+                        to_path=dst,
+                        expected_source=src_node.source_name if src_node else "",
+                    )
+                )
+            store.dependencies = Relation[DependencyRow].from_rows(
+                "dependencies", edge_rows
+            )
+
+        # ── 4. Populate addon manifests ─────────────────────────────────
+        if addon_manifests:
+            store.addons = Relation[AddonRow].from_rows(
+                "addons",
+                [
+                    AddonRow(a.addon_id, a.name, a.is_enabled, a.priority)
+                    for a in addon_manifests
+                ],
+            )
+
+        # ── 5. Store graph reference ────────────────────────────────────
         if graph is not None:
             store.graph = graph.graph if hasattr(graph, "graph") else graph
 
-        # ── 4. Run analyzers ────────────────────────────────────────────
+        # ── 6. Run analyzers ────────────────────────────────────────────
         for analyzer in analyzers:
             analyzer.analyze(vfs, graph, store)
 

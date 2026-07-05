@@ -571,6 +571,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         graph=graph,
         analyzers=analyzers,
         entry_points=entry_points,
+        addon_manifests=None,
     )
 
     # 5 -- Apply resource pollution filter (if --check-* flag given)
