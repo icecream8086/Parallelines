@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import re
 
-from parallelines.exceptions import ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +57,7 @@ def extract_vmt_dependencies(file_content: str) -> set[str]:
 
         for key in _TEXTURE_KEYS:
             # Build a pattern for the specific key
-            pattern = re.compile(
-                re.escape(key) + r'\s+"([^"]+)"', re.IGNORECASE
-            )
+            pattern = re.compile(re.escape(key) + r'\s+"([^"]+)"', re.IGNORECASE)
             for match in pattern.finditer(file_content):
                 raw_value = match.group(1)
                 dependencies.add(_normalise_texture_path(raw_value))

@@ -38,7 +38,7 @@ class IsolatedPackageAnalyzer(Analyzer):
 
         for node in all_files:
             total_counter[node.source_name] += 1
-            if node.is_dead:
+            if node.is_dead or node.is_redundant:
                 dead_counter[node.source_name] += 1
 
         items: list[dict] = []

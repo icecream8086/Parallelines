@@ -70,7 +70,9 @@ def generate_dot(
             import networkx as nx  # type: ignore[import-untyped]
 
             centrality = nx.degree_centrality(nx_graph)
-            sorted_nodes = sorted(all_nodes, key=lambda n: centrality.get(n, 0), reverse=True)
+            sorted_nodes = sorted(
+                all_nodes, key=lambda n: centrality.get(n, 0), reverse=True
+            )
             selected = set(sorted_nodes[:max_nodes])
         except Exception:
             selected = set(all_nodes[:max_nodes])
@@ -111,7 +113,12 @@ def generate_dot(
     lines.append("}")
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    logger.info("Graphviz .dot saved to %s (%d nodes, %d edges)", output_path, len(nodes), len(edges))
+    logger.info(
+        "Graphviz .dot saved to %s (%d nodes, %d edges)",
+        output_path,
+        len(nodes),
+        len(edges),
+    )
     return output_path.resolve()
 
 

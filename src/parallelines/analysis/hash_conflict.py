@@ -77,9 +77,7 @@ class HashConflictAnalyzer(Analyzer):
                 continue
 
             enabled_hashes = {
-                n.file_hash
-                for n in nodes
-                if n.is_enabled and n.file_hash is not None
+                n.file_hash for n in nodes if n.is_enabled and n.file_hash is not None
             }
             hash_differ = len(enabled_hashes) > 1
 

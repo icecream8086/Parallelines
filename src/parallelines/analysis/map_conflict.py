@@ -40,23 +40,27 @@ class MapConflictAnalyzer(Analyzer):
         for node in vfs.get_all_files():
             if not node.virtual_path.lower().endswith(".bsp"):
                 continue
-            bsp_sources[node.virtual_path].append({
-                "source": node.source_name,
-                "priority": node.priority,
-                "enabled": node.is_enabled,
-                "hash": node.file_hash,
-                "type": "installed",
-            })
+            bsp_sources[node.virtual_path].append(
+                {
+                    "source": node.source_name,
+                    "priority": node.priority,
+                    "enabled": node.is_enabled,
+                    "hash": node.file_hash,
+                    "type": "installed",
+                }
+            )
 
         # 2. 合并外部 VPK 的地图来源
         for vpath, src_name in self.external_sources.items():
-            bsp_sources[vpath].append({
-                "source": src_name,
-                "priority": -1,  # 默认低于已安装
-                "enabled": True,
-                "hash": None,
-                "type": "external",
-            })
+            bsp_sources[vpath].append(
+                {
+                    "source": src_name,
+                    "priority": -1,  # 默认低于已安装
+                    "enabled": True,
+                    "hash": None,
+                    "type": "external",
+                }
+            )
 
         items: list[dict] = []
         for virtual_path, sources in bsp_sources.items():
@@ -80,18 +84,20 @@ class MapConflictAnalyzer(Analyzer):
             # 按优先级排序
             sorted_src = sorted(sources, key=lambda x: x["priority"], reverse=True)
 
-            items.append({
-                "map": virtual_path,
-                "active_source": active_source,
-                "total_sources": len(unique),
-                "hash_conflict": "是" if hash_conflict else "否",
-                "sources": ", ".join(
-                    f"{s['source']}(P{s['priority']})" for s in sorted_src
-                ),
-                "overridden": ", ".join(
-                    s["source"] for s in sorted_src
-                    if s["source"] != active_source
-                ) or "—",
-            })
+            items.append(
+                {
+                    "map": virtual_path,
+                    "active_source": active_source,
+                    "total_sources": len(unique),
+                    "hash_conflict": "是" if hash_conflict else "否",
+                    "sources": ", ".join(
+                        f"{s['source']}(P{s['priority']})" for s in sorted_src
+                    ),
+                    "overridden": ", ".join(
+                        s["source"] for s in sorted_src if s["source"] != active_source
+                    )
+                    or "—",
+                }
+            )
 
         return AnalysisFragment(analyzer_name="MapConflictAnalyzer", items=items)

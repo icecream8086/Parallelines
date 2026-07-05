@@ -1,0 +1,9 @@
+{
+  "LocalVpkAddonSave": [
+    {
+      "Name": "example_addon",
+      "IsEnabled": true,
+      "VpkPriority": 10
+    }
+  ]
+}

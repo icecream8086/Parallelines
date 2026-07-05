@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ _HELP_TEXT = """
 
 def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
     """Synchronous data pipeline — runs in a thread, reports progress via callback."""
+    from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
     from parallelines.analysis.dead_file import DeadFileAnalyzer
     from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
     from parallelines.analysis.engine import AnalyzerEngine
@@ -63,7 +65,7 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
         graph = gb.build()
 
     status_cb("Running analyzers...")
-    entries = discover_entry_points(vfs) if vfs else set()
+    entries = discover_entry_points(vfs, chain=chain) if vfs else set()
     engine = AnalyzerEngine()
     engine.register(RedundancyAnalyzer())
     engine.register(DeadFileAnalyzer(entry_points=entries if entries else None))
@@ -71,6 +73,7 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
     engine.register(DependencyConflictAnalyzer())
     engine.register(IsolatedPackageAnalyzer())
     engine.register(ImpactAnalyzer(top_n=20))
+    engine.register(AddonDependencyAnalyzer(chain=chain))
 
     report = engine.run(vfs, graph)
     return report
@@ -115,6 +118,7 @@ class MainScreen(Screen):
         self._game: str = ""
         self._show_help = False
         self._running = False
+        self._lock = threading.Lock()
 
     def set_game(self, game: str, game_root: str) -> None:
         self._game = game
@@ -138,16 +142,18 @@ class MainScreen(Screen):
     # ── Actions ─────────────────────────────────────────────
 
     def action_run_analysis(self) -> None:
-        if self._running:
-            self._running = False
-            self._redraw_status(msg="Cancelled")
-            return
+        with self._lock:
+            if self._running:
+                self._running = False
+                self._redraw_status(msg="Cancelled")
+                return
         if not self._game_root:
             self._redraw_status(msg="Set --game-root first")
             return
         self._redraw_status(msg="Starting (async)...")
         self.refresh()
-        self._running = True
+        with self._lock:
+            self._running = True
         self._run_async()
 
     def action_cycle_language(self) -> None:
@@ -166,6 +172,7 @@ class MainScreen(Screen):
         if self._report:
             try:
                 from parallelines.report.generators import generate_report
+
                 p = generate_report(self._report, "json", "./reports")
                 self._redraw_status(msg=f"Saved: {p.name}")
             except Exception as exc:
@@ -181,7 +188,8 @@ class MainScreen(Screen):
         game_root = self._game_root
 
         def _on_done(fut: asyncio.Future) -> None:
-            self._running = False
+            with self._lock:
+                self._running = False
             exc = fut.exception()
             if exc:
                 self._redraw_status(msg=f"Error: {exc}")
@@ -228,7 +236,7 @@ class MainScreen(Screen):
         labels = [_("analyzer.redundancy"), _("report.issues"), _("report.status")]
         for i, label in enumerate(labels):
             try:
-                t.columns[i].label = label
+                t.columns[i].label = label  # type: ignore[assignment,index]
             except Exception:
                 pass
 

@@ -43,8 +43,7 @@ def parse_vpk_index(vpk_path: str | Path) -> list[dict[str, Any]]:
     if not path_obj.exists():
         raise ParseError(f"VPK file not found: {vpk_path}")
     if not SRCTOOLS_AVAILABLE:
-        logger.error("srctools not available; cannot parse %s", vpk_path)
-        return []
+        raise ParseError("srctools is not available, cannot parse VPK files")
 
     try:
         archive = _VPK(path_obj)

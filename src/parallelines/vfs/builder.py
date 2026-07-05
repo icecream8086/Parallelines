@@ -10,6 +10,7 @@ from parallelines.cache.manager import CacheManager
 
 try:
     import pandas as pd
+
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
@@ -40,17 +41,18 @@ def _parse_vpk_worker(args: tuple) -> tuple:
     """Worker function for ProcessPool. Standalone to support pickling.
 
     Receieves ``(vpk_path_str, name, priority)`` and returns
-    ``(name, priority, entries_list)``. Returns an empty list when parsing
-    fails so the caller can decide whether to log a warning.
+    ``(name, priority, entries_list, error_or_none)``. Returns the
+    exception message as the fourth element when parsing fails so
+    the caller can log the failure reason.
     """
     vpk_path_str, name, priority = args
     try:
         from parallelines.parsers.vpk_parser import parse_vpk_index
 
         entries = parse_vpk_index(vpk_path_str)
-    except Exception:
-        return (name, priority, [])
-    return (name, priority, entries)
+    except Exception as exc:
+        return (name, priority, [], str(exc))
+    return (name, priority, entries, None)
 
 
 class VfsBuilder:
@@ -75,7 +77,9 @@ class VfsBuilder:
         self.config = config if config is not None else load_config()
         self.game = self.config.general.game
         self.use_cache = use_cache
-        self.num_workers = num_workers or (self.config.general.num_workers if self.config else 0)
+        self.num_workers = num_workers or (
+            self.config.general.num_workers if self.config else 0
+        )
 
         cache_dir = self.config.general.cache_dir or "./cache"
         self._cache = CacheManager(Path(cache_dir))
@@ -191,7 +195,7 @@ class VfsBuilder:
         """Full rebuild: scan VPKs and loose files from all game directories."""
         vpk_queue: list[tuple[str, str, int]] = []  # (path_str, name, priority)
 
-        base_priority = 1000
+        base_priority = 100
         for i, game_dir in enumerate(game_dirs):
             resolved = self._resolve_path(game_dir)
             if resolved is None or not resolved.is_dir():
@@ -202,15 +206,17 @@ class VfsBuilder:
                 vpk_queue.append((str(vpk_file), vpk_file.name, priority))
 
             # Skip scanning loose files in directories outside game_root (e.g., hl2)
-            if not str(resolved).startswith(str(self.game_root)):
+            try:
+                resolved.relative_to(self.game_root)
+            except ValueError:
                 logger.debug("Skipping loose scan for %s (outside game root)", resolved)
                 continue
 
             self._scan_directory(vfs, resolved, resolved, priority)
 
         # Addons
-        addon_priority = 10
-        for addon_root_dir in addon_roots + ["addons"]:
+        addon_priority = 1000
+        for addon_root_dir in dict.fromkeys(addon_roots + ["addons"]):
             resolved = self._resolve_path(addon_root_dir)
             if resolved is None or not resolved.is_dir():
                 continue
@@ -257,7 +263,7 @@ class VfsBuilder:
                     }
                 )
 
-        for addon_root_dir in addon_roots + ["addons"]:
+        for addon_root_dir in dict.fromkeys(addon_roots + ["addons"]):
             resolved = self._resolve_path(addon_root_dir)
             if resolved is None or not resolved.is_dir():
                 continue
@@ -304,6 +310,18 @@ class VfsBuilder:
                 vfs.add_file(node)
 
             vfs.resolve()
+
+            # Load dependency edges from cache and apply to active nodes
+            # so GraphBuilder can use them without re-extracting from file content.
+            edges_df = self._cache.load_edges()
+            if edges_df is not None and not edges_df.empty:
+                for _, edge_row in edges_df.iterrows():
+                    from_path = edge_row.get("from", "")
+                    to_path = edge_row.get("to", "")
+                    if from_path and to_path:
+                        active_node = vfs.get_active_file(from_path)
+                        if active_node is not None:
+                            active_node.dependencies.add(to_path)
         except Exception as exc:
             logger.warning("Failed to load from cache: %s", exc)
             return VirtualFileSystem()
@@ -332,7 +350,18 @@ class VfsBuilder:
                 )
 
             files_df = pd.DataFrame(records)
-            edges_df = pd.DataFrame(columns=["from", "to"])
+
+            # Collect dependency edges from active FileNodes
+            edge_records: list[dict[str, str]] = []
+            for node in vfs.get_all_active():
+                for dep in node.dependencies:
+                    edge_records.append({"from": node.virtual_path, "to": dep})
+            edges_df = (
+                pd.DataFrame(edge_records)
+                if edge_records
+                else pd.DataFrame(columns=["from", "to"])
+            )
+
             meta = {
                 "version": "1.0",
                 "game_root": str(self.game_root),
@@ -473,11 +502,20 @@ class VfsBuilder:
                 n if n is not None else "auto",
             )
             with Pool(n) as pool:
-                for name, priority, entries in pool.imap_unordered(
+                failed_count = 0
+                for name, priority, entries, error in pool.imap_unordered(
                     _parse_vpk_worker, vpk_queue
                 ):
+                    if error:
+                        logger.warning("Failed to parse VPK %s: %s", name, error)
+                        failed_count += 1
                     if entries:
                         self._add_vpk_entries(vfs, name, priority, entries)
+                if failed_count:
+                    logger.warning(
+                        "%d VPK(s) failed to parse during parallel ingestion",
+                        failed_count,
+                    )
         else:
             if HAS_TQDM:
                 vpk_iter = tqdm(  # type: ignore[name-defined]

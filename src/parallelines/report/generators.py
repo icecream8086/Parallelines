@@ -123,9 +123,7 @@ def generate_html_report(report: AnalysisReport, path: str | Path) -> None:
         rows_html: list[str] = []
         for idx, fragment in enumerate(report.fragments):
             analyzer_label = escape(fragment.analyzer_name.replace("Analyzer", ""))
-            rows_html.append(
-                f'      <h2 style="color: #333;">{analyzer_label}</h2>\n'
-            )
+            rows_html.append(f'      <h2 style="color: #333;">{analyzer_label}</h2>\n')
 
             if not fragment.items:
                 rows_html.append(
@@ -143,7 +141,7 @@ def generate_html_report(report: AnalysisReport, path: str | Path) -> None:
             cols_html = "".join(
                 f'<th style="padding: 8px 12px; border-bottom: 2px solid #ddd; '
                 f'text-align: left; background: #f8f9fa;">'
-                f'{escape(hdr)}</th>\n'
+                f"{escape(hdr)}</th>\n"
                 for hdr in field_names
             )
             table_id = f"t{idx}"
@@ -173,7 +171,7 @@ def generate_html_report(report: AnalysisReport, path: str | Path) -> None:
                     vals.append(escape(raw))
                 row_cells = "".join(
                     f'<td style="padding: 6px 12px; border-bottom: 1px solid #eee;">'
-                    f'{v}</td>\n'
+                    f"{v}</td>\n"
                     for v in vals
                 )
                 table_html += f"          <tr>{row_cells}        </tr>\n"
@@ -203,7 +201,7 @@ def generate_html_report(report: AnalysisReport, path: str | Path) -> None:
             "<body>\n"
             "  <h1>Parallelines Analysis Report</h1>\n"
             f'  <p class="timestamp">Generated: '
-            f'{escape(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</p>\n'
+            f"{escape(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}</p>\n"
             + "\n".join(rows_html)
             + "\n</body>\n</html>\n"
         )

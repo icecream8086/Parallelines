@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from parallelines.analysis.base import Analyzer
+from parallelines.parsers.addoninfo import extract_dependency_ids, parse_addoninfo
 from parallelines.types import AnalysisFragment
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,15 @@ class AddonDependencyAnalyzer(Analyzer):
     Missing dependencies are reported with the addon name, the expected ID,
     and the source VPK or addon folder name.
     """
+
+    def __init__(self, chain=None) -> None:
+        """Initialize the analyzer.
+
+        Args:
+            chain: Optional ``srctools.filesys.FileSystemChain`` for reading
+                   addoninfo.txt content from VPKs.
+        """
+        self.chain = chain
 
     def analyze(self, vfs, graph) -> AnalysisFragment:
         """Identify missing addon dependencies.
@@ -49,7 +59,8 @@ class AddonDependencyAnalyzer(Analyzer):
         # 2. Find all addoninfo.txt files among active files and parse them
         items: list[dict[str, Any]] = []
         addoninfo_files = [
-            node for node in vfs.get_all_active()
+            node
+            for node in vfs.get_all_active()
             if node.virtual_path.lower().endswith("addoninfo.txt")
         ]
 
@@ -58,19 +69,8 @@ class AddonDependencyAnalyzer(Analyzer):
             return AnalysisFragment(analyzer_name="AddonDependencyAnalyzer", items=[])
 
         for node in addoninfo_files:
-            # Try to read the file content through the VFS — since we have
-            # FileNode objects but not raw content, attempt a heuristic:
-            # the source_name often matches a known VPK/addon.
-            # For proper content reading we would need the FileSystemChain,
-            # but we can still work with the metadata we have.
-
-            # For now, parse from the source VPK name as a fallback
             addon_name = node.source_name
-
-            # We store the addoninfo fields in node.dependencies (set of str),
-            # but we actually need the parsed dict.  We'll make a best-effort
-            # attempt by checking if node.addon_id is set.
-            declared_deps = self._get_declared_deps_from_node(node)
+            declared_deps = self._parse_addoninfo_deps(node)
             if not declared_deps:
                 continue
 
@@ -99,21 +99,25 @@ class AddonDependencyAnalyzer(Analyzer):
 
         return AnalysisFragment(analyzer_name="AddonDependencyAnalyzer", items=items)
 
-    @staticmethod
-    def _get_declared_deps_from_node(node: Any) -> list[str]:
-        """Try to extract declared dependency IDs from a FileNode.
+    def _parse_addoninfo_deps(self, node: Any) -> list[str]:
+        """Read addoninfo.txt content through the FileSystemChain and extract dependency IDs.
 
-        This is a best-effort heuristic.  The primary mechanism is to check
-        if the dependency information was stored during VFS building.
+        Args:
+            node: A FileNode whose virtual_path points to addoninfo.txt.
+
+        Returns:
+            A list of declared dependency identifier strings (empty if the chain is
+            unavailable or parsing fails).
         """
-        declared: list[str] = []
+        if self.chain is None:
+            logger.debug("No chain available; cannot read %s", node.virtual_path)
+            return []
+        try:
+            file_obj = self.chain[node.virtual_path]
+            content = file_obj.open_str().read()
+        except Exception:
+            logger.debug("Failed to read %s via chain", node.virtual_path)
+            return []
 
-        # Check node.dependencies (a set of strings) for entries that look
-        # like numeric workshop IDs or addon identifiers
-        if hasattr(node, "dependencies") and node.dependencies:
-            for dep in node.dependencies:
-                dep_str = str(dep).strip()
-                if dep_str.isdigit() or len(dep_str) > 4:
-                    declared.append(dep_str)
-
-        return declared
+        meta = parse_addoninfo(content)
+        return extract_dependency_ids(meta)

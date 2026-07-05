@@ -35,7 +35,6 @@ class DependencyConflictAnalyzer(Analyzer):
             )
 
         active_files = vfs.get_all_active()
-        active_paths = {n.virtual_path for n in active_files}
         items: list[dict] = []
 
         # --- Check node-level dependencies -----------------------------------
@@ -63,32 +62,8 @@ class DependencyConflictAnalyzer(Analyzer):
                         }
                     )
 
-        # --- Check graph edges for cross-source overrides --------------------
-        # For every edge (src, tgt) in the graph, if the active provider of
-        # the target has been overridden (is redundant) from a different
-        # source, flag it.
-        for src_path, tgt_path in graph.graph.edges():
-            src_provider = vfs.get_active_file(src_path)
-            tgt_provider = vfs.get_active_file(tgt_path)
-
-            if src_provider is None or tgt_provider is None:
-                continue
-
-            if src_provider.source_name != tgt_provider.source_name:
-                # Check whether the target's virtual path has *other* FileNodes
-                # that are redundant (i.e. was overridden), indicating the
-                # dependency resolved to a different source than the one the
-                # source file's addon might expect.
-                items.append(
-                    {
-                        "source_file": src_path,
-                        "depends_on": tgt_path,
-                        "provided_by": tgt_provider.source_name,
-                        "expected_from": src_provider.source_name,
-                        "risk": "source_mismatch",
-                    }
-                )
-
-        return AnalysisFragment(
-            analyzer_name="DependencyConflictAnalyzer", items=items
-        )
+        # Deduplicate: the node.dependencies loop above already reports every
+        # dependency edge (GraphBuilder populates both node.dependencies and
+        # graph edges from the same data).  Duplicate reporting from graph
+        # edges is removed here.
+        return AnalysisFragment(analyzer_name="DependencyConflictAnalyzer", items=items)

@@ -181,14 +181,16 @@ def discover_entry_points(vfs, chain=None) -> set[str]:
         if lower_path in script_lower:
             entry_points.add(original_path)
             logger.debug(
-                "discover_entry_points: found script entry '%s'", original_path,
+                "discover_entry_points: found script entry '%s'",
+                original_path,
             )
 
         # All .nut files under scripts/vscripts/ are VScript entry points.
         if lower_path.startswith("scripts/vscripts/") and lower_path.endswith(".nut"):
             entry_points.add(original_path)
             logger.debug(
-                "discover_entry_points: found vscript '%s'", original_path,
+                "discover_entry_points: found vscript '%s'",
+                original_path,
             )
 
     # 4. Ensure gameinfo.txt is always treated as an entry point.
@@ -237,7 +239,8 @@ def filter_entry_points(
         else:
             removed += 1
             logger.debug(
-                "filter_entry_points: removing '%s' (no outgoing edges)", ep,
+                "filter_entry_points: removing '%s' (no outgoing edges)",
+                ep,
             )
 
     if removed:
@@ -264,7 +267,9 @@ def get_known_entry_points(game: str) -> set[str]:
         *game* is ``None`` or empty.
     """
     if not game:
-        logger.debug("get_known_entry_points: game is None or empty, returning empty set")
+        logger.debug(
+            "get_known_entry_points: game is None or empty, returning empty set"
+        )
         return set()
 
     game = game.lower()

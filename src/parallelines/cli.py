@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -76,23 +77,26 @@ def _filter_report(report, exts: set[str] | None):
     Returns the same report if exts is None (no filtering)."""
     if exts is None:
         return report
-    for fragment in report.fragments:
+    new_report = deepcopy(report)
+    for fragment in new_report.fragments:
         fragment.items = [
-            item for item in fragment.items
+            item
+            for item in fragment.items
             if any(
                 str(item.get(k, "")).lower().endswith(tuple(exts))
                 for k in ("virtual_path", "source_file", "depends_on", "file")
                 if k in item
             )
         ]
-    report.fragments = [f for f in report.fragments if f.items]
-    return report
+    new_report.fragments = [f for f in new_report.fragments if f.items]
+    return new_report
 
 
 def _get_version() -> str:
     """Return the current version string."""
     try:
         from importlib.metadata import version
+
         return version("parallelines")
     except Exception:
         return "0.1.0"
@@ -184,47 +188,58 @@ def build_parser() -> argparse.ArgumentParser:
     # ── 资源污染专项检查 (report.md 定义的 11 类问题) ──
     parser.add_argument(
         "--check-textures",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="材质/贴图冲突 — .vmt/.vtf 同名哈希比对",
     )
     parser.add_argument(
         "--check-models",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="模型冲突 — .mdl/.vvd/.vtx 覆盖检测",
     )
     parser.add_argument(
         "--check-sounds",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="音效冲突 — .wav/.mp3 同名覆盖检测",
     )
     parser.add_argument(
         "--check-scripts",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="脚本冲突 — .nut 全局函数覆盖风险",
     )
     parser.add_argument(
         "--check-configs",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="配置污染 — .cfg 自动执行覆盖检测",
     )
     parser.add_argument(
         "--check-maps",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="地图完整性 — .bsp 缺失依赖/版本不匹配",
     )
     parser.add_argument(
         "--check-manifests",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="清单污染 — particles/soundscapes manifest 冲突",
     )
     parser.add_argument(
         "--check-all",
-        action="store_true", default=False,
+        action="store_true",
+        default=False,
         help="全部资源污染检查 (等价于以上 --check-* 全开)",
     )
     parser.add_argument(
         "--compare-maps",
-        type=str, nargs="+", default=None, metavar="VPK",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="VPK",
         help="地图版本比对: 指定一个或多个 VPK 文件, 提取其中的 .bsp 分析同名冲突",
     )
     parser.add_argument(
@@ -350,9 +365,9 @@ def _main(argv: list[str] | None = None) -> int:
         config.general.game_root = args.game_root
     if args.log_level:
         config.general.log_level = args.log_level
-    if hasattr(args, "format") and args.format:
+    if args.format:
         config.output.format = args.format
-    if hasattr(args, "output_dir") and args.output_dir:
+    if args.output_dir:
         config.output.output_dir = args.output_dir
     if args.cpu is not None:
         config.general.num_workers = args.cpu
@@ -360,12 +375,11 @@ def _main(argv: list[str] | None = None) -> int:
         config.general.memory_limit = args.memory
     if args.nolimit:
         config.general.nolimit = True
-    if args.debug:
-        config.general.log_level = "DEBUG"
-        logging.getLogger().setLevel(logging.DEBUG)
-
     if args.lang:
         set_language(args.lang)
+
+    if args.debug:
+        config.general.log_level = "DEBUG"
 
     # Resolve effective worker count
     if config.general.nolimit:
@@ -391,11 +405,6 @@ def _main(argv: list[str] | None = None) -> int:
     mem_str = config.general.memory_limit or "auto"
     logger.info("Resources: %s workers, memory=%s", worker_str, mem_str)
 
-    if not config.general.game_root:
-        parser.print_help()
-        print(f"\nError: {_('cli.game_root_required')}")
-        return 1
-
     if args.tui:
         from parallelines.tui.app import ParallelinesTUI
 
@@ -405,6 +414,11 @@ def _main(argv: list[str] | None = None) -> int:
         )
         app.run()
         return 0
+
+    if not config.general.game_root:
+        parser.print_help()
+        print(f"\nError: {_('cli.game_root_required')}")
+        return 1
 
     try:
         if args.analyze:
@@ -473,7 +487,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         graph = None
 
     # 3a -- Generate Graphviz .dot if requested
-    if hasattr(args, "graphviz") and args.graphviz and graph is not None:
+    if args.graphviz and graph is not None:
         from parallelines.report.graphviz import generate_dot
 
         dot_path = generate_dot(graph, args.graphviz)
@@ -487,7 +501,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         entry_points = discover_entry_points(vfs, chain=chain)
 
     # 3b -- If --maps was provided, expand to maps/{name}.bsp and add to set.
-    if hasattr(args, "maps") and args.maps:
+    if args.maps:
         for map_name in args.maps:
             map_path = f"maps/{map_name}.bsp"
             entry_points.add(map_path)
@@ -521,7 +535,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     # 4a -- Addon dependency checking (requires addoninfo.txt in VFS)
     from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
 
-    engine.register(AddonDependencyAnalyzer())
+    engine.register(AddonDependencyAnalyzer(chain=chain))
 
     # 4b -- Map version conflict analysis
     if args.compare_maps:
@@ -546,12 +560,17 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         if not external_maps:
             logger.warning("No .bsp found in specified VPKs")
         else:
-            logger.info("Map conflict analysis: %d maps from %d VPK(s)",
-                        len(external_maps), len(args.compare_maps))
-            engine.register(MapConflictAnalyzer(
-                target_maps=set(external_maps.keys()),
-                external_sources=external_maps,
-            ))
+            logger.info(
+                "Map conflict analysis: %d maps from %d VPK(s)",
+                len(external_maps),
+                len(args.compare_maps),
+            )
+            engine.register(
+                MapConflictAnalyzer(
+                    target_maps=set(external_maps.keys()),
+                    external_sources=external_maps,
+                )
+            )
 
     report = engine.run(vfs, graph)
 
@@ -559,7 +578,10 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     check_exts = _get_check_extensions(args)
     if check_exts:
         report = _filter_report(report, check_exts)
-        logger.info("Filtered to %d issues matching check scope", sum(len(f.items) for f in report.fragments))
+        logger.info(
+            "Filtered to %d issues matching check scope",
+            sum(len(f.items) for f in report.fragments),
+        )
 
     # 6 -- Console summary
     print_summary(report)

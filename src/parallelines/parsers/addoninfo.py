@@ -89,7 +89,8 @@ def _kv_addoninfo_to_dict(kv: Any) -> dict[str, Any]:
                         if hasattr(sub, "name"):
                             sub_val = (
                                 str(sub.value)
-                                if hasattr(sub, "value") and not isinstance(sub.value, list)
+                                if hasattr(sub, "value")
+                                and not isinstance(sub.value, list)
                                 else ""
                             )
                             item[str(sub.name)] = sub_val

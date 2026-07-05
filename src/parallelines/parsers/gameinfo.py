@@ -61,8 +61,8 @@ def _kv_to_dict(kv: Any) -> dict[str, Any]:
                 result[name] = _kv_list_to_dicts(child.value)
             else:
                 result[name] = str(child.value)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to convert Keyvalues tree: %s", exc)
     return result
 
 
@@ -82,7 +82,9 @@ def _kv_list_to_dicts(children: list[Any]) -> dict[str, Any] | list[str]:
         name = names[0]
         values: list[str] = []
         for c in children:
-            values.append(str(c.value) if not isinstance(c.value, list) else str(c.value))
+            values.append(
+                str(c.value) if not isinstance(c.value, list) else str(c.value)
+            )
         return {name: values if len(values) > 1 else values[0]}
 
     result: dict[str, Any] = {}

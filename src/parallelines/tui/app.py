@@ -19,8 +19,13 @@ class ParallelinesTUI(App):
     ENABLE_COMMAND_PALETTE = False
     SCREEN_NOTIFY = False
 
-    def __init__(self, game: str = "", game_root: str = "",
-                 report_path: str | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        game: str = "",
+        game_root: str = "",
+        report_path: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._game = game
         self._game_root = game_root
@@ -43,6 +48,7 @@ class ParallelinesTUI(App):
             return
         try:
             import json
+
             raw = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             return

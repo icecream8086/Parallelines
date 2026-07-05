@@ -1,0 +1,5 @@
+VertexLitGeneric
+{
+    $basetexture "brick"
+    $bumpmap "brick_normal"
+}
