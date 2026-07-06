@@ -1,7 +1,6 @@
 """Test S3 — query operators on Relation."""
 from __future__ import annotations
 
-from collections import Counter
 
 import pytest
 

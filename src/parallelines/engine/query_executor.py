@@ -330,6 +330,8 @@ class QueryExecutor:
 
         if isinstance(pred, LikePred):
             val = QueryExecutor._get_col_value(pred.column, row, columns)
+            if val is None:
+                return False
             return fnmatch.fnmatch(str(val), pred.pattern)
 
         if isinstance(pred, InPred):

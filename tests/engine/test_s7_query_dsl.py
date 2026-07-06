@@ -16,7 +16,6 @@ from parallelines.engine.query_ast import (
     LikePred,
     Literal as LiteralNode,
     OrderByClause,
-    Predicate,
     Query,
     Source,
 )

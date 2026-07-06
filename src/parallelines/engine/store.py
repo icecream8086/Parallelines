@@ -149,6 +149,11 @@ class Relation(Generic[T]):
                 self_val = self_row[self_on_idx]
             else:
                 self_val = getattr(self_row, on)
+
+            # Guard: None keys never match SQL NULL semantics (no match ≠ NULL).
+            if self_val is None:
+                continue
+
             matches = other.lookup(on, self_val)
             for other_row in matches:
                 other_vals = tuple(

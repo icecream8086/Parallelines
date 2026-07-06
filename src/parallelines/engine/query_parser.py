@@ -96,10 +96,26 @@ class QueryParser:
         if "query" in s:
             return Source(subquery=QueryParser.parse(s["query"]))
         if "descendants_of" in s:
+            if not isinstance(s["descendants_of"], str):
+                raise QueryParseError(
+                    f"'descendants_of' must be a string, got {type(s['descendants_of']).__name__}"
+                )
+            if not s["descendants_of"]:
+                raise QueryParseError("'descendants_of' must not be empty")
             return Source(graph_fn="descendants_of", graph_fn_arg=s["descendants_of"])
         if "ancestors_of" in s:
+            if not isinstance(s["ancestors_of"], str):
+                raise QueryParseError(
+                    f"'ancestors_of' must be a string, got {type(s['ancestors_of']).__name__}"
+                )
+            if not s["ancestors_of"]:
+                raise QueryParseError("'ancestors_of' must not be empty")
             return Source(graph_fn="ancestors_of", graph_fn_arg=s["ancestors_of"])
         if "find_cycles" in s:
+            if not isinstance(s["find_cycles"], bool):
+                raise QueryParseError(
+                    f"'find_cycles' must be a boolean, got {type(s['find_cycles']).__name__}"
+                )
             return Source(graph_fn="find_cycles")
         raise QueryParseError(f"Invalid source: {s}")
 
@@ -208,6 +224,11 @@ class QueryParser:
 
     @staticmethod
     def _parse_join(j: dict) -> JoinClause:
+        valid_types = ["inner", "left", "right", "full"]
+        if j["type"] not in valid_types:
+            raise QueryParseError(
+                f"Invalid join type '{j['type']}', must be one of {valid_types}"
+            )
         return JoinClause(
             type=j["type"],
             with_source=QueryParser._parse_source(j["with"]),
