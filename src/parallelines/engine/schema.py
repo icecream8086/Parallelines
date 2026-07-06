@@ -70,6 +70,21 @@ class EntryPointRow:
 
 
 @dataclass
+class ExternalFileRow:
+    """Row in the ``external_files`` relation — files from an externally loaded VPK reference.
+
+    Field names use an ``ext_`` prefix to avoid ambiguity when joined with ``FileRow``
+    (both relations share ``virtual_path`` as the join key; all other columns are unique).
+    """
+
+    virtual_path: str
+    ext_source_name: str  # reference name, e.g. "ref:pesaro"
+    ext_priority: int  # user-specified comparison priority
+    ext_file_hash: str  # VPK CRC32 hex string
+    ext_file_size: int  # bytes
+
+
+@dataclass
 class DependencyCycleRow:
     cycle: list[str]  # list of virtual_paths forming a cycle
     length: int

@@ -4,29 +4,12 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
-from parallelines.analysis.dead_file import DeadFileAnalyzer
-from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
-from parallelines.analysis.mod_classify import ModClassifier
-from parallelines.analysis.cycle_detector import CycleDetector
-from parallelines.analysis.cascade_detector import CascadeDetector
-from parallelines.analysis.global_script_detector import GlobalScriptDetector
-from parallelines.analysis.implicit_dep_detector import ImplicitDepDetector
-from parallelines.analysis.entry_points import (
-    discover_entry_points,
-    filter_entry_points,
-)
-from parallelines.analysis.hash_conflict import HashConflictAnalyzer
-from parallelines.analysis.impact import ImpactAnalyzer
-from parallelines.analysis.isolated import IsolatedPackageAnalyzer
-from parallelines.analysis.redundancy import RedundancyAnalyzer
 from parallelines.config import load_config, AppConfig
-from parallelines.engine import HashConflictRow, Relation, ResultStore
+from parallelines.engine import Relation, ResultStore
 from parallelines.exceptions import ParallelinesError
-from parallelines.graph.builder import GraphBuilder
 from parallelines.report.generators import generate_report_from_store
-from parallelines.vfs.builder import VfsBuilder
-from parallelines.vfs.external import ExternalVpkOverlay
 from parallelines.i18n import set_language, _
 
 logger = logging.getLogger(__name__)
@@ -302,6 +285,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Simulated priority for the external vpk (used with --external)",
     )
     parser.add_argument(
+        "--ref-query",
+        type=str,
+        default="all",
+        choices=["all", "overrides", "overridden", "new_files"],
+        help="Preset query template for external VPK analysis (default: all)",
+    )
+    parser.add_argument(
         "--sv-pure",
         type=str,
         default=None,
@@ -545,18 +535,43 @@ def _check_memory_available(config: AppConfig, logger: logging.Logger) -> None:
         )
 
 
-def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
-    """Run full analysis: build VFS, build dep graph, run analyzers, output report."""
+def _build_store(
+    config: AppConfig, args: argparse.Namespace
+) -> tuple[ResultStore | None, Any]:
+    """Build VFS, graph, and run analyzers → return (store, vfs).
+
+    Shared pipeline used by ``cmd_analyze`` and ``cmd_external``.
+    Returns (None, None) on fatal error (gameinfo.txt missing, etc.).
+    """
+    from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
+    from parallelines.analysis.cascade_detector import CascadeDetector
+    from parallelines.analysis.cycle_detector import CycleDetector
+    from parallelines.analysis.dead_file import DeadFileAnalyzer
+    from parallelines.analysis.dep_conflict import DependencyConflictAnalyzer
+    from parallelines.analysis.entry_points import (
+        discover_entry_points,
+        filter_entry_points,
+    )
+    from parallelines.analysis.global_script_detector import GlobalScriptDetector
+    from parallelines.analysis.hash_conflict import HashConflictAnalyzer
+    from parallelines.analysis.implicit_dep_detector import ImplicitDepDetector
+    from parallelines.analysis.impact import ImpactAnalyzer
+    from parallelines.analysis.isolated import IsolatedPackageAnalyzer
+    from parallelines.analysis.mod_classify import ModClassifier
+    from parallelines.analysis.redundancy import RedundancyAnalyzer
+    from parallelines.graph.builder import GraphBuilder
+    from parallelines.vfs.builder import VfsBuilder
+
     game_root = Path(config.general.game_root).resolve()
     if not (game_root / "gameinfo.txt").exists():
         logger.error("gameinfo.txt not found in %s", game_root)
-        return 1
+        return None, None
 
     # 0 -- Resolve resource limits
     num_workers = config.general.num_workers
-    if args.nolimit:
-        num_workers = 0  # auto = all cores
-    elif args.cpu is not None:
+    if getattr(args, "nolimit", False):
+        num_workers = 0
+    elif getattr(args, "cpu", None) is not None:
         num_workers = args.cpu
 
     _check_memory_available(config, logger)
@@ -589,7 +604,9 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     logger.info("Building file system chain ...")
     chain = builder.get_chain()
     if chain is not None:
-        vpk_count = sum(1 for s in chain.systems if "vpk" in str(type(s[0])).lower())  # type: ignore[union-attr]
+        vpk_count = sum(
+            1 for s in chain.systems if "vpk" in str(type(s[0])).lower()
+        )
         logger.info("FileSystemChain ready (%d VPKs in chain)", vpk_count)
 
     # 3 -- Build dependency graph
@@ -607,21 +624,20 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         graph = None
 
     # 3a -- Generate Graphviz .dot if requested
-    if args.graphviz and graph is not None:
+    if getattr(args, "graphviz", None) and graph is not None:
         from parallelines.report.graphviz import generate_dot
 
         dot_path = generate_dot(graph, args.graphviz)
         logger.info("Graphviz .dot saved to %s", dot_path)
 
     # 3 -- Discover entry points (unless user provided explicit ones)
-    #     Pass the chain so manifest content can be read for deeper discovery.
-    if args.entry_points:
+    if getattr(args, "entry_points", None):
         entry_points = set(args.entry_points)
     else:
         entry_points = discover_entry_points(vfs, chain=chain)
 
     # 3b -- If --maps was provided, expand to maps/{name}.bsp and add to set.
-    if args.maps:
+    if getattr(args, "maps", None):
         for map_name in args.maps:
             map_path = f"maps/{map_name}.bsp"
             entry_points.add(map_path)
@@ -658,17 +674,14 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     ]
 
     # 4a -- Addon dependency checking (requires addoninfo.txt in VFS)
-    from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
-
     analyzers.append(AddonDependencyAnalyzer(chain=chain))
 
     # 4b -- Map version conflict analysis
-    if args.compare_maps:
+    if getattr(args, "compare_maps", None):
         from parallelines.analysis.map_conflict import MapConflictAnalyzer
         from parallelines.parsers.vpk_parser import parse_vpk_index
 
-        # 解析每个指定 VPK，提取其中的 .bsp 路径
-        external_maps: dict[str, str] = {}  # virtual_path → source_name
+        external_maps: dict[str, str] = {}
         for vpk_arg in args.compare_maps:
             vpk_path = Path(vpk_arg)
             if not vpk_path.exists():
@@ -705,6 +718,15 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
         addon_manifests=None,
     )
 
+    return store, vfs
+
+
+def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
+    """Run full analysis: build VFS, build dep graph, run analyzers, output report."""
+    store, vfs = _build_store(config, args)
+    if store is None:
+        return 1
+
     # 4c -- sv_pure whitelist integration
     whitelist_path = args.sv_pure or config.entry_points.pure_server_whitelist_path
     if whitelist_path:
@@ -718,7 +740,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
             allowed_nodes = filter_vfs_by_whitelist(vfs.get_all_files(), whitelist)
             allowed_paths = {n.virtual_path for n in allowed_nodes}
             blocked_count = 0
-            for fr in store.files.rows:
+            for fr in (store.files.rows if store.files else []):
                 if fr.virtual_path not in allowed_paths:
                     fr.is_pure_allowed = False
                     blocked_count += 1
@@ -748,100 +770,227 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
 
 
 def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
-    """Analyze an external vpk against the current environment."""
-    game_root = Path(config.general.game_root).resolve()
-    if not (game_root / "gameinfo.txt").exists():
-        logger.error("gameinfo.txt not found in %s", game_root)
+    """Analyze an external VPK against the current environment using the query engine."""
+    # 1 -- Full analysis pipeline
+    store, _vfs = _build_store(config, args)
+    if store is None:
         return 1
-
-    # 1 -- Build base VFS (use cache for performance)
-    builder = VfsBuilder(
-        game_root,
-        config,
-        use_cache=True,
-        num_workers=config.general.num_workers,
-    )
-    logger.info(
-        "Building base VFS from '%s' (game=%s) ...", game_root, config.general.game
-    )
-    vfs = builder.build()
-    logger.info("Base VFS ready: %d active files", len(vfs.get_all_active()))
 
     # 2 -- Resolve external VPK path
     vpk_path = Path(args.external)
     if not vpk_path.is_absolute():
         vpk_path = Path.cwd() / vpk_path
-
     vpk_path = vpk_path.resolve()
     if not vpk_path.exists():
         logger.error("External VPK file not found: %s", vpk_path)
         return 1
 
     # 3 -- Map CLI priority string to integer
-    if args.vpk_priority == "highest":
-        priority = 2000  # Above all base-game priorities (1000 max)
+    priority = 2000 if args.vpk_priority == "highest" else -100
+    ref_name = vpk_path.stem
+
+    # 4 -- Load external VPK into store
+    try:
+        store.load_reference(ref_name, str(vpk_path), priority=priority)
+    except ParallelinesError as e:
+        logger.error("%s", e)
+        return 1
+
+    ext_count = len(store.external_files) if store.external_files else 0
+    logger.info(
+        "External VPK '%s' loaded: %d files at priority %d (%s)",
+        vpk_path.name, ext_count, priority, args.vpk_priority,
+    )
+
+    # 5 -- Run preset queries
+    query_name = getattr(args, "ref_query", "all")
+    if query_name == "all":
+        queries_to_run = ["overrides", "overridden", "new_files"]
     else:
-        priority = -100  # Below all base-content priorities
+        queries_to_run = [query_name]
 
-    # 4 -- Build overlay and run analysis
-    overlay = ExternalVpkOverlay(vfs, vpk_path, priority=priority)
-    logger.info(
-        "Analyzing %s at priority %d (%s) ...",
-        vpk_path.name,
-        priority,
-        args.vpk_priority,
+    results: dict[str, Relation] = {}
+    for qname in queries_to_run:
+        fn = _PRESET_REFERENCE_QUERIES.get(qname)
+        if fn is not None:
+            results[qname] = fn(store)
+
+    # 6 -- Console output
+    _print_reference_results(results, ref_name, vpk_path.name, ext_count)
+
+    # 7 -- Save report (JSON)
+    output_dir = Path(config.output.output_dir or "./reports")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+    import json
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = output_dir / f"parallelines_external_{ref_name}_{timestamp}.json"
+    report_data: dict = {
+        "external_vpk": vpk_path.name,
+        "ref_name": ref_name,
+        "total_files": ext_count,
+        "priority": priority,
+    }
+    for qname, rel in results.items():
+        report_data[qname] = [dict(zip(rel.columns, r)) for r in rel.rows]
+    output_path.write_text(
+        json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    result = overlay.analyze()
-
-    summary = result["summary"]
-
-    # 5 -- Build ResultStore from overlay results
-    store = ResultStore()
-
-    hash_conflict_rows: list[HashConflictRow] = []
-    for item in result.get("overrides", []):
-        hash_conflict_rows.append(
-            HashConflictRow(
-                virtual_path=item["virtual_path"],
-                winner_source=result["external_vpk"],
-                loser_source=item.get("existing_source", ""),
-                winner_hash=item.get("external_hash", ""),
-                loser_hash="",
-            )
-        )
-    for item in result.get("will_be_overridden", []):
-        hash_conflict_rows.append(
-            HashConflictRow(
-                virtual_path=item["virtual_path"],
-                winner_source=item.get("existing_source", ""),
-                loser_source=result["external_vpk"],
-                winner_hash="",
-                loser_hash=item.get("external_hash", ""),
-            )
-        )
-
-    if hash_conflict_rows:
-        store.hash_conflicts = Relation[HashConflictRow].from_rows(
-            "hash_conflicts", hash_conflict_rows
-        )
-
-    # 6 -- Console summary
-    logger.info(
-        "External VPK summary: %d files total, %d override, %d overridden, %d new",
-        summary["total_files_in_vpk"],
-        summary["will_override"],
-        summary["will_be_overridden"],
-        summary["new_files"],
-    )
-    print_summary_from_store(store)
-
-    # 7 -- Save report
-    output_dir = config.output.output_dir or "./reports"
-    output_format = config.output.format or "json"
-    path = generate_report_from_store(store, output_format, output_dir)
-    logger.info("External VPK report saved to %s", path)
+    logger.info("External VPK report saved to %s", output_path)
 
     return 0
+
+
+# ── S9: external VPK reference preset queries ──────────────────────────
+
+
+def _query_reference_overrides(store: ResultStore) -> Relation:
+    """External VPK files that would override current active files.
+
+    Conditions: same virtual_path, ext_priority > current priority, hashes differ.
+    """
+    ext = store.external_files
+    if ext is None or len(ext) == 0:
+        return Relation(
+            "overrides",
+            ("virtual_path", "ext_source", "current_source",
+             "ext_hash", "current_hash"),
+            [],
+        )
+    cur = store.files
+    if cur is None:
+        return Relation(
+            "overrides",
+            ("virtual_path", "ext_source", "current_source",
+             "ext_hash", "current_hash"),
+            [],
+        )
+
+    active_by_path = {r.virtual_path: r for r in cur.rows if r.is_active}
+
+    rows = []
+    for e in ext.rows:
+        c = active_by_path.get(e.virtual_path)
+        if c is None:
+            continue
+        if e.ext_priority > c.priority and e.ext_file_hash != c.file_hash:
+            rows.append((
+                e.virtual_path, e.ext_source_name,
+                c.source_name, e.ext_file_hash, c.file_hash,
+            ))
+
+    return Relation(
+        "overrides",
+        ("virtual_path", "ext_source", "current_source",
+         "ext_hash", "current_hash"),
+        rows,
+    )
+
+
+def _query_reference_overridden(store: ResultStore) -> Relation:
+    """External VPK files that would be overridden by current active files.
+
+    Conditions: same virtual_path, ext_priority < current priority, hashes differ.
+    """
+    ext = store.external_files
+    if ext is None or len(ext) == 0:
+        return Relation(
+            "overridden",
+            ("virtual_path", "ext_source", "current_source",
+             "ext_hash", "current_hash"),
+            [],
+        )
+    cur = store.files
+    if cur is None:
+        return Relation(
+            "overridden",
+            ("virtual_path", "ext_source", "current_source",
+             "ext_hash", "current_hash"),
+            [],
+        )
+
+    active_by_path = {r.virtual_path: r for r in cur.rows if r.is_active}
+
+    rows = []
+    for e in ext.rows:
+        c = active_by_path.get(e.virtual_path)
+        if c is None:
+            continue
+        if e.ext_priority < c.priority and e.ext_file_hash != c.file_hash:
+            rows.append((
+                e.virtual_path, e.ext_source_name,
+                c.source_name, e.ext_file_hash, c.file_hash,
+            ))
+
+    return Relation(
+        "overridden",
+        ("virtual_path", "ext_source", "current_source",
+         "ext_hash", "current_hash"),
+        rows,
+    )
+
+
+def _query_reference_new_files(store: ResultStore) -> Relation:
+    """External VPK files with no matching virtual_path in the current environment."""
+    ext = store.external_files
+    if ext is None or len(ext) == 0:
+        return Relation(
+            "new_files",
+            ("virtual_path", "ext_source", "ext_file_hash", "ext_file_size"),
+            [],
+        )
+    cur = store.files
+    cur_paths = {r.virtual_path for r in cur.rows} if cur else set()
+
+    rows = [
+        (e.virtual_path, e.ext_source_name, e.ext_file_hash, e.ext_file_size)
+        for e in ext.rows
+        if e.virtual_path not in cur_paths
+    ]
+    return Relation(
+        "new_files",
+        ("virtual_path", "ext_source", "ext_file_hash", "ext_file_size"),
+        rows,
+    )
+
+
+_PRESET_REFERENCE_QUERIES = {
+    "overrides": _query_reference_overrides,
+    "overridden": _query_reference_overridden,
+    "new_files": _query_reference_new_files,
+}
+
+
+def _print_reference_results(
+    results: dict[str, Relation],
+    ref_name: str,
+    vpk_filename: str,
+    ext_count: int,
+) -> None:
+    """Print external VPK reference analysis results as PrettyTables."""
+    from prettytable import PrettyTable
+
+    print(f"\n{'='*60}")
+    print(f"  External VPK: {vpk_filename}  (ref: {ref_name})")
+    print(f"  Total files in VPK: {ext_count}")
+    print(f"{'='*60}\n")
+
+    for qname, rel in results.items():
+        count = len(rel)
+        label = {
+            "overrides": "OVERRIDES (external wins)",
+            "overridden": "OVERRIDDEN (current wins)",
+            "new_files": "NEW FILES (no conflict)",
+        }.get(qname, qname)
+
+        table = PrettyTable()
+        table.title = f"{label}: {count} files"
+        table.field_names = list(rel.columns)
+        table.align = "l"
+        for row in rel.rows:
+            table.add_row([str(v) for v in row])
+        print(table)
+        print()
 
 
 if __name__ == "__main__":

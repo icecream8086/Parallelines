@@ -13,6 +13,7 @@ from parallelines.engine.schema import (
     DependencyCycleRow,
     DependencyRow,
     EntryPointRow,
+    ExternalFileRow,
     FileRow,
     GlobalScriptRow,
     HashConflictRow,
@@ -335,6 +336,7 @@ class ResultStore:
         self.global_scripts: Relation[GlobalScriptRow] | None = None
         self.implicit_deps: Relation[ImplicitDepRow] | None = None
         self.mod_types: Relation[ModTypeRow] | None = None
+        self.external_files: Relation[ExternalFileRow] | None = None
 
     @classmethod
     def from_analysis(
@@ -449,6 +451,62 @@ class ResultStore:
             return Relation[FileRow].from_rows("ancestors", [])
         matched = [r for r in self.files.rows if r.virtual_path in reachable]
         return Relation[FileRow].from_rows("ancestors", matched)
+
+    def load_reference(self, name: str, vpk_path: str,
+                       priority: int = 2000) -> None:
+        """Parse an external VPK index and load its files into ``external_files``.
+
+        Args:
+            name: Reference name — stored in ``ext_source_name`` as ``"ref:{name}"``.
+            vpk_path: Path to the external ``.vpk`` file.
+            priority: Simulated priority, default 2000 (above all regular addons).
+
+        Raises:
+            ParallelinesError: VPK parsing fails.
+            FileNotFoundError: ``vpk_path`` does not exist.
+
+        Note:
+            Repeated calls **overwrite** previous results (single-reference mode).
+            Future versions may extend to append mode for multi-VPK comparison.
+        """
+        from pathlib import Path as _Path
+
+        from parallelines.exceptions import ParallelinesError
+        from parallelines.parsers.vpk_parser import parse_vpk_index
+
+        resolved = _Path(vpk_path).resolve()
+        if not resolved.exists():
+            raise FileNotFoundError(f"External VPK not found: {resolved}")
+
+        try:
+            entries = parse_vpk_index(resolved)
+        except Exception as exc:
+            raise ParallelinesError(
+                f"Failed to parse external VPK '{vpk_path}': {exc}"
+            ) from exc
+
+        if not entries:
+            import logging
+            logging.getLogger(__name__).warning(
+                "External VPK '%s' contains no indexable files, "
+                "external_files will be empty", name,
+            )
+
+        rows = [
+            ExternalFileRow(
+                virtual_path=e["virtual_path"],
+                ext_source_name=f"ref:{name}",
+                ext_priority=priority,
+                ext_file_hash=e.get("crc") or "",
+                ext_file_size=e.get("file_size", 0),
+            )
+            for e in entries
+        ]
+
+        self.external_files = Relation[ExternalFileRow].from_rows(
+            "external_files", rows
+        )
+        self.external_files.build_index("virtual_path")
 
     def to_dict(self) -> dict:
         """将所有关系序列化为 {relation_name: [dict, ...]} 用于 JSON 输出。"""

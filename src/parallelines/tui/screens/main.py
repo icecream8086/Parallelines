@@ -42,7 +42,8 @@ _PROGRESS_MAP: dict[str, int] = {
 }
 
 
-def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
+def _run_pipeline(game: str, game_root: str, status_cb,
+                  external_vpk_path: str | None = None) -> Any:
     """Synchronous data pipeline — runs in a thread, reports progress via callback."""
     from parallelines.analysis.addon_dep import AddonDependencyAnalyzer
     from parallelines.analysis.cascade_detector import CascadeDetector
@@ -100,6 +101,11 @@ def _run_pipeline(game: str, game_root: str, status_cb) -> Any:
         entry_points=entries,
         addon_manifests=None,
     )
+
+    # S9: optionally load external VPK reference
+    if external_vpk_path:
+        store.load_reference(Path(external_vpk_path).stem, external_vpk_path)
+
     return store
 
 
@@ -141,6 +147,7 @@ class MainScreen(Screen):
         self._store = None
         self._game_root: str = ""
         self._game: str = ""
+        self._external_vpk_path: str | None = None
         self._show_help = False
         self._running = False
         self._lock = threading.Lock()
@@ -237,7 +244,13 @@ class MainScreen(Screen):
 
         self._t0 = time.perf_counter()
         loop = asyncio.get_event_loop()
-        task = loop.run_in_executor(None, _run_pipeline, game, game_root, _status)
+        task = loop.run_in_executor(
+            None,
+            lambda: _run_pipeline(
+                game, game_root, _status,
+                external_vpk_path=self._external_vpk_path,
+            ),
+        )
         task.add_done_callback(_on_done)
 
     # ── UI helpers ──────────────────────────────────────────

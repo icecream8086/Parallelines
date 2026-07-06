@@ -36,25 +36,5 @@ class TestExternalVpkOverlay(unittest.TestCase):
         self.assertIsInstance(overlay.vpk_path, Path)
         self.assertEqual(overlay.vpk_path, Path("/some/path.vpk"))
 
-    def test_analyze_no_vpks(self) -> None:
-        """Analyze with a non-existent VPK returns an error dict with empty summaries."""
-        base_vfs = VirtualFileSystem()
-        dummy_path = Path("/nonexistent/external.vpk")
-        overlay = ExternalVpkOverlay(base_vfs, dummy_path, priority=50)
-
-        result = overlay.analyze()
-
-        self.assertIsInstance(result, dict)
-        self.assertIn("error", result)
-        self.assertEqual(result["external_vpk"], "external.vpk")
-        self.assertEqual(result["summary"]["total_files_in_vpk"], 0)
-        self.assertEqual(result["summary"]["will_override"], 0)
-        self.assertEqual(result["summary"]["will_be_overridden"], 0)
-        self.assertEqual(result["summary"]["new_files"], 0)
-        self.assertEqual(result["overrides"], [])
-        self.assertEqual(result["will_be_overridden"], [])
-        self.assertEqual(result["new_files"], [])
-
-
 if __name__ == "__main__":
     unittest.main()

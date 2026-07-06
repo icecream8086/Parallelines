@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from parallelines.exceptions import ParseError
 from parallelines.parsers.vpk_parser import parse_vpk_index
@@ -98,93 +97,5 @@ class ExternalVpkOverlay:
 
         return overlay
 
-    def analyze(self) -> dict[str, Any]:
-        """Run diff analysis and return a report dict.
-
-        Compares the base VFS (before) against the overlay VFS (after) to
-        categorise every file in the external VPK.
-
-        Returns
-        -------
-        dict with keys:
-
-        ``external_vpk``
-            File name of the external VPK.
-        ``injected_priority``
-            The simulated priority value used.
-        ``summary``
-            ``{"total_files_in_vpk": N, "will_override": N,
-              "will_be_overridden": N, "new_files": N}``
-        ``overrides``
-            List of files the external VPK **will** override (external wins).
-            Each item: ``{"virtual_path": ..., "existing_source": ...,
-            "existing_priority": ..., "file_size": ..., "external_hash": ...}``
-        ``will_be_overridden``
-            List of files the external VPK provides but existing files win.
-        ``new_files``
-            List of files in the external VPK that do not conflict with anything.
-        ``error``
-            Present only when the VPK could not be parsed.
-        """
-        # Parse the external VPK index.
-        try:
-            entries = parse_vpk_index(self.vpk_path)
-        except ParseError as exc:
-            return {
-                "external_vpk": self.vpk_path.name,
-                "injected_priority": self.priority,
-                "error": str(exc),
-                "summary": {
-                    "total_files_in_vpk": 0,
-                    "will_override": 0,
-                    "will_be_overridden": 0,
-                    "new_files": 0,
-                },
-                "overrides": [],
-                "will_be_overridden": [],
-                "new_files": [],
-            }
-
-        will_override: list[dict[str, Any]] = []
-        will_be_overridden: list[dict[str, Any]] = []
-        new_files: list[dict[str, Any]] = []
-
-        for entry in entries:
-            vpath = entry["virtual_path"]
-            existing = self.base_vfs.get_active_file(vpath)
-
-            file_info: dict[str, Any] = {
-                "virtual_path": vpath,
-                "file_size": entry.get("file_size", 0),
-                "external_hash": entry.get("crc"),
-            }
-
-            if existing is None:
-                # Path does not exist in the base environment → truly new.
-                new_files.append(file_info)
-            elif existing.priority < self.priority:
-                # External VPK has higher priority → it will override the current file.
-                file_info["existing_source"] = existing.source_name
-                file_info["existing_priority"] = existing.priority
-                will_override.append(file_info)
-            else:
-                # Existing file has higher (or equal) priority → external file is overridden.
-                file_info["existing_source"] = existing.source_name
-                file_info["existing_priority"] = existing.priority
-                will_be_overridden.append(file_info)
-
-        summary = {
-            "total_files_in_vpk": len(entries),
-            "will_override": len(will_override),
-            "will_be_overridden": len(will_be_overridden),
-            "new_files": len(new_files),
-        }
-
-        return {
-            "external_vpk": self.vpk_path.name,
-            "injected_priority": self.priority,
-            "summary": summary,
-            "overrides": will_override,
-            "will_be_overridden": will_be_overridden,
-            "new_files": new_files,
-        }
+    # analyze() has been removed in S9 — use ResultStore.load_reference() +
+    # preset queries (cli.py) for external VPK comparison.
