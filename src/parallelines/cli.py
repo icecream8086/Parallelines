@@ -234,6 +234,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Analyze an external vpk against the current environment",
     )
     parser.add_argument(
+        "--repl",
+        action="store_true",
+        default=False,
+        help="Enter interactive REPL mode",
+    )
+    parser.add_argument(
         "--format",
         type=str,
         choices=["json", "csv", "text", "html"],
@@ -455,6 +461,9 @@ def _main(argv: list[str] | None = None) -> int:
             return cmd_analyze(config, args)
         elif args.external:
             return cmd_external(config, args)
+        elif args.repl:
+            from parallelines.repl import ReplSession
+            return ReplSession(config, args).run()
         else:
             parser.print_help()
             return 0
@@ -963,7 +972,10 @@ def _print_reference_results(
         table.field_names = list(rel.columns)
         table.align = "l"
         for row in rel.rows:
-            table.add_row([str(v) for v in row])
+            if isinstance(row, tuple):
+                table.add_row([str(v) for v in row])
+            else:
+                table.add_row([str(getattr(row, c)) for c in rel.columns])
         print(table)
         print()
 
@@ -976,12 +988,13 @@ def _find_queries_dir() -> Path:
     from pathlib import Path as _Path
     import sys as _sys
 
-    # When frozen (PyInstaller), queries/ lives next to the exe.
+    # When frozen (PyInstaller onedir), queries/ is inside _internal/ next to exe.
     if getattr(_sys, "frozen", False):
         exe_dir = _Path(_sys.executable).resolve().parent
-        candidate = exe_dir / "queries"
-        if candidate.is_dir():
-            return candidate
+        for sub in ("queries", "_internal/queries"):
+            candidate = exe_dir / sub
+            if candidate.is_dir():
+                return candidate
 
     # Development: project root (3 levels up from this file in src/parallelines/).
     dev_root = _Path(__file__).resolve().parent.parent.parent
@@ -1061,7 +1074,11 @@ def _run_query_and_print(store, query_spec: str) -> None:
     table.field_names = list(result.columns)
     table.align = "l"
     for row in result.rows:
-        table.add_row([str(v) for v in row])
+        if isinstance(row, tuple):
+            table.add_row([str(v) for v in row])
+        else:
+            import dataclasses
+            table.add_row([str(getattr(row, c)) for c in result.columns])
     print()
     print(table)
     print()

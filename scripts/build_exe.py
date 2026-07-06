@@ -23,7 +23,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = PROJECT_ROOT / "dist"
-SPEC_DIR = PROJECT_ROOT / "scripts"
+SPEC_DIR = PROJECT_ROOT
 ICO_PATH = PROJECT_ROOT / "ico" / "logo.ico"
 
 
@@ -62,7 +62,6 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
 
     args = [
         sys.executable, "-m", "PyInstaller",
-        "--clean",
         "--noconfirm",
         "--name", name,
         "--distpath", str(DIST_DIR),
@@ -83,6 +82,13 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "--collect-data", "textual",
         # bundle queries/ for --query / --list-presets
         "--add-data", f"queries{os.pathsep}queries",
+        # hidden imports for lazy-loaded REPL subpackage
+        "--hidden-import", "parallelines.repl",
+        "--hidden-import", "parallelines.repl.session",
+        "--hidden-import", "parallelines.repl.commands",
+        "--hidden-import", "parallelines.repl.completer",
+        "--hidden-import", "parallelines.repl.formatter",
+        "--hidden-import", "parallelines.repl.prompt",
     ]
 
     # Exclude unnecessary modules to reduce size
