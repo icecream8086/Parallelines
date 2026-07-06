@@ -28,10 +28,9 @@ class DeadFileAnalyzer(Analyzer):
     def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Mark dead (unreachable) files in the store.
 
-        Args:
-            vfs: VirtualFileSystem instance.
-            graph: DependencyGraph instance.
-            store: ResultStore to write results into.
+        Computes the set of live paths via a single multi-source BFS, collects
+        dead (virtual_path, source_name) keys, then makes one pass over
+        ``store.files`` in O(n+m) instead of O(n*m).
         """
         if vfs is None or graph is None or self.entry_points is None:
             return
@@ -40,13 +39,17 @@ class DeadFileAnalyzer(Analyzer):
         reachable = graph.reachable_from_all(self.entry_points)
         live = self.entry_points | reachable
 
-        # Anything active but not in the live set is dead.
-        for node in vfs.get_all_active():
-            if node.virtual_path not in live:
-                store.files.update_cell(  # type: ignore[union-attr]
-                    lambda r, vp=node.virtual_path, sn=node.source_name: (  # type: ignore[misc]
-                        r.virtual_path == vp and r.source_name == sn
-                    ),
-                    "is_dead",
-                    True,
-                )
+        # Collect dead keys from active VFS nodes not in the live set.
+        dead_keys = {
+            (n.virtual_path, n.source_name)
+            for n in vfs.get_all_active()
+            if n.virtual_path not in live
+        }
+
+        if not dead_keys:
+            return
+
+        # Single pass over store.files to flip the flag.
+        for row in store.files.rows:  # type: ignore[union-attr]
+            if (row.virtual_path, row.source_name) in dead_keys:
+                row.is_dead = True
