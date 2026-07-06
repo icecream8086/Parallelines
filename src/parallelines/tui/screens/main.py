@@ -27,7 +27,7 @@ def _fmt(n: int) -> str:
 
 _HELP_TEXT = """
 [bold]Keyboard Shortcuts[/]
-  r        Run analysis (async — UI stays responsive)
+  r        Run analysis (async -- UI stays responsive)
   l        Switch language (zh/en)
   q / Esc  Quit
   h / F1   Toggle this help
@@ -303,7 +303,7 @@ class MainScreen(Screen):
         t.add_columns(_("analyzer.redundancy"), _("report.issues"), _("report.status"))
 
         if self._store is None:
-            t.add_rows([["—", "—", _("report.ok")]])
+            t.add_rows([["--", "--", _("report.ok")]])
             return
 
         fragments = [

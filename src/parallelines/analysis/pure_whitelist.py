@@ -118,7 +118,7 @@ def filter_vfs_by_whitelist(
         A list of FileNodes whose virtual paths match at least one pattern.
     """
     if not patterns:
-        logger.warning("Empty whitelist patterns — no files will pass through")
+        logger.warning("Empty whitelist patterns -- no files will pass through")
         return []
 
     if "**" in patterns:

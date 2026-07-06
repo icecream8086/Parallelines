@@ -143,7 +143,7 @@ def build_exe(minimal: bool = False) -> Path:
     _pyinstaller(minimal=minimal)
     out_dir = DIST_DIR / "parallelines"
 
-    print(f"\n✅ Build complete: {out_dir}")
+    print(f"\n[OK]Build complete: {out_dir}")
     print(f"   Launcher: {out_dir / 'parallelines.exe'}")
     print(f"   Library:  {out_dir / '_internal' / 'parallelines'}")
     return out_dir
@@ -175,7 +175,7 @@ def build_zip() -> Path:
                 zf.write(file_path, arcname)
 
     size = zip_name.stat().st_size / 1_000_000
-    print(f"\n✅ Source zip: {zip_name} ({size:.1f} MB)")
+    print(f"\n[OK]Source zip: {zip_name} ({size:.1f} MB)")
     return zip_name
 
 
@@ -208,7 +208,7 @@ def build_msi() -> Path:
             for p in DIST_DIR.glob("*.msi"):
                 msi_path = p
                 break
-        print(f"\n✅ MSI installer: {msi_path}")
+        print(f"\n[OK]MSI installer: {msi_path}")
         return msi_path
 
 

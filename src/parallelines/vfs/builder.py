@@ -190,7 +190,7 @@ class VfsBuilder:
     def invalidate_cache(self) -> None:
         """Remove all cached VPK analysis data (next run will rebuild)."""
         self._cache.invalidate()
-        logger.info("Cache cleared — next run will rebuild from disk")
+        logger.info("Cache cleared -- next run will rebuild from disk")
 
     def cache_size(self) -> str:
         """Return human-readable cache directory size."""

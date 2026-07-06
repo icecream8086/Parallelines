@@ -6,7 +6,7 @@ from parallelines.engine.store import Relation
 
 
 def cmd_help(session, args: str) -> bool:
-    print("Parallelines REPL — interactive query mode\n")
+    print("Parallelines REPL -- interactive query mode\n")
     print("Meta-commands (prefix with .):")
     print("  .help                  Show this help")
     print("  .tables                List available relations")

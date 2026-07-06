@@ -26,12 +26,12 @@ def parse_addoninfo(content: str) -> dict[str, Any]:
 
     The returned dict contains the following keys (when present):
 
-    - ``addon_name`` — human-readable addon name
-    - ``addon_id`` — unique addon identifier (typically a numeric string)
-    - ``addon_description`` — description text
-    - ``addon_url`` — URL string
-    - ``addon_version`` — version string
-    - ``dependencies`` — list of dependency dicts, each with optional keys
+    - ``addon_name`` -- human-readable addon name
+    - ``addon_id`` -- unique addon identifier (typically a numeric string)
+    - ``addon_description`` -- description text
+    - ``addon_url`` -- URL string
+    - ``addon_version`` -- version string
+    - ``dependencies`` -- list of dependency dicts, each with optional keys
       such as ``workshop_id``
 
     When ``srctools.keyvalues`` is not available the function returns an empty

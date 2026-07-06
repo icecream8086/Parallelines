@@ -4,7 +4,7 @@ Usage:
     from parallelines.i18n import _, set_language, detect_language
 
     set_language("zh")          # manual override
-    print(_("app.title"))       # → "Parallelines — Source 引擎 VPK 资源分析工具"
+    print(_("app.title"))       # → "Parallelines -- Source 引擎 VPK 资源分析工具"
     print(_("report.ok"))       # → "正常"
 """
 
@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 ZH: dict[str, str] = {
-    "app.title": "Parallelines — Source 引擎 VPK 资源分析工具",
+    "app.title": "Parallelines -- Source 引擎 VPK 资源分析工具",
     "app.quit": "退出",
     "cli.analyze": "分析",
     "cli.external": "外部 VPK 分析",
@@ -56,7 +56,7 @@ ZH: dict[str, str] = {
 }
 
 EN: dict[str, str] = {
-    "app.title": "Parallelines — Source Engine VPK Resource Analysis Tool",
+    "app.title": "Parallelines -- Source Engine VPK Resource Analysis Tool",
     "app.quit": "Quit",
     "cli.analyze": "Analyze",
     "cli.external": "External VPK Analysis",

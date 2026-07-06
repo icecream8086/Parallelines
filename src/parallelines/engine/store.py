@@ -169,7 +169,7 @@ class Relation(Generic[T]):
                     self_vals = tuple(getattr(self_row, c) for c in self.columns)
                     result_rows.append(self_vals + other_vals)
         return Relation(
-            name=f"{self.name}\N{BOWTIE}{other.name}",
+            name=f"{self.name}|>{other.name}",
             columns=result_columns,
             rows=result_rows,
         )
@@ -218,7 +218,7 @@ class Relation(Generic[T]):
                         result_rows.append(self_vals + other_vals)
 
         return Relation(
-            name=f"{self.name}⭤{other.name}",
+            name=f"{self.name}+{other.name}",
             columns=result_columns,
             rows=result_rows,
         )
@@ -267,7 +267,7 @@ class Relation(Generic[T]):
                     merged.append(tuple(self_vals) + other_vals)
 
         return Relation(
-            name=f"{self.name}⟗{other.name}",
+            name=f"{self.name}*{other.name}",
             columns=left.columns,
             rows=merged,
         )
@@ -466,7 +466,7 @@ class ResultStore:
         """Parse an external VPK index and load its files into ``external_files``.
 
         Args:
-            name: Reference name — stored in ``ext_source_name`` as ``"ref:{name}"``.
+            name: Reference name -- stored in ``ext_source_name`` as ``"ref:{name}"``.
             vpk_path: Path to the external ``.vpk`` file.
             priority: Simulated priority, default 2000 (above all regular addons).
 

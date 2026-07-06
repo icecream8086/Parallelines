@@ -13,9 +13,9 @@ class DependencyConflictAnalyzer(Analyzer):
 
     Two kinds of problems are reported:
 
-    * **Missing dependency** — a file declares a dependency whose virtual path
+    * **Missing dependency** -- a file declares a dependency whose virtual path
       does not exist in the active (resolved) file set.
-    * **Source mismatch** — in the dependency graph, an edge connects two files
+    * **Source mismatch** -- in the dependency graph, an edge connects two files
       whose active providers belong to different sources and the target has been
       overridden (is redundant from another provider's perspective).
     """

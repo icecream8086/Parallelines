@@ -42,10 +42,10 @@ def extract_nut_dependencies(file_content: str) -> set[str]:
 
     Detects the following patterns:
 
-    - ``IncludeScript("path")`` — script includes, resolved to
+    - ``IncludeScript("path")`` -- script includes, resolved to
       ``scripts/vscripts/`` paths with ``.nut`` extension appended if
       missing.
-    - ``PrecacheModel("path")`` — model precache references, kept as-is.
+    - ``PrecacheModel("path")`` -- model precache references, kept as-is.
 
     Args:
         file_content: The full text content of a ``.nut`` file.

@@ -11,7 +11,7 @@ from parallelines.engine.schema import HashConflictRow
 
 class HashConflictAnalyzer(Analyzer):
     """Detects files that share a virtual_path across different sources but
-    have different content hashes — a sign of potential file conflicts.
+    have different content hashes -- a sign of potential file conflicts.
 
     Formal definition:
         Conflict(f_i, f_j) ⟺ Path(f_i) = Path(f_j) ∧ Hash(f_i) ≠ Hash(f_j)

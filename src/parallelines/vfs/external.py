@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class ExternalVpkOverlay:
     """Simulate injecting an external .vpk into an existing VFS for conflict analysis.
 
-    The base VFS is never modified — a temporary overlay is created for analysis.
+    The base VFS is never modified -- a temporary overlay is created for analysis.
 
     Parameters
     ----------

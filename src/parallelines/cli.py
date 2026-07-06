@@ -174,43 +174,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--check-textures",
         action="store_true",
         default=False,
-        help="材质/贴图冲突 — .vmt/.vtf 同名哈希比对",
+        help="材质/贴图冲突 -- .vmt/.vtf 同名哈希比对",
     )
     parser.add_argument(
         "--check-models",
         action="store_true",
         default=False,
-        help="模型冲突 — .mdl/.vvd/.vtx 覆盖检测",
+        help="模型冲突 -- .mdl/.vvd/.vtx 覆盖检测",
     )
     parser.add_argument(
         "--check-sounds",
         action="store_true",
         default=False,
-        help="音效冲突 — .wav/.mp3 同名覆盖检测",
+        help="音效冲突 -- .wav/.mp3 同名覆盖检测",
     )
     parser.add_argument(
         "--check-scripts",
         action="store_true",
         default=False,
-        help="脚本冲突 — .nut 全局函数覆盖风险",
+        help="脚本冲突 -- .nut 全局函数覆盖风险",
     )
     parser.add_argument(
         "--check-configs",
         action="store_true",
         default=False,
-        help="配置污染 — .cfg 自动执行覆盖检测",
+        help="配置污染 -- .cfg 自动执行覆盖检测",
     )
     parser.add_argument(
         "--check-maps",
         action="store_true",
         default=False,
-        help="地图完整性 — .bsp 缺失依赖/版本不匹配",
+        help="地图完整性 -- .bsp 缺失依赖/版本不匹配",
     )
     parser.add_argument(
         "--check-manifests",
         action="store_true",
         default=False,
-        help="清单污染 — particles/soundscapes manifest 冲突",
+        help="清单污染 -- particles/soundscapes manifest 冲突",
     )
     parser.add_argument(
         "--check-all",
@@ -511,14 +511,14 @@ def _parse_memory_limit(limit_str: str) -> int | None:
 def _check_memory_available(config: AppConfig, logger: logging.Logger) -> None:
     """Log a warning if ``memory_limit`` is set but cannot be verified.
 
-    This is purely advisory — actual memory enforcement is left to the OS.
+    This is purely advisory -- actual memory enforcement is left to the OS.
     """
     raw = config.general.memory_limit
     if not raw:
         return
     limit_bytes = _parse_memory_limit(raw)
     if limit_bytes is None:
-        logger.warning("Unrecognised memory limit format '%s' — ignoring", raw)
+        logger.warning("Unrecognised memory limit format '%s' -- ignoring", raw)
         return
     if limit_bytes == 0:
         return  # explicitly disabled
@@ -560,7 +560,7 @@ def _check_memory_available(config: AppConfig, logger: logging.Logger) -> None:
 
     if mem_available is not None and limit_bytes > mem_available:
         logger.warning(
-            "Memory limit (%s) exceeds available memory (%s MB) — "
+            "Memory limit (%s) exceeds available memory (%s MB) -- "
             "system may swap or OOM",
             raw,
             round(mem_available / 1_048_576),
@@ -629,7 +629,7 @@ def _build_store(
         if not cache_ready:
             print()
             print("=" * 60)
-            print("  ⚠  冷启动模式 — 需要读取所有 VPK 文件内容")
+            print("  [!] 冷启动模式 -- 需要读取所有 VPK 文件内容")
             print()
             if not use_cache:
                 print("  --no-cache 已指定，将跳过 SSD 缓存重建依赖图。")
@@ -661,10 +661,10 @@ def _build_store(
 
     if builder.cache_hit:
         logger.info(
-            "VFS loaded from SSD cache (%s) — use --no-cache to force rebuild",
+            "VFS loaded from SSD cache (%s) -- use --no-cache to force rebuild",
             builder.cache_size(),
         )
-        logger.info("  💡 清理缓存: python -m parallelines ... analyze --clean-cache")
+        logger.info("  清理缓存: python -m parallelines ... analyze --clean-cache")
     else:
         logger.info("VFS built from disk, cache saved (%s)", builder.cache_size())
 
@@ -674,7 +674,7 @@ def _build_store(
     logger.info("Building dependency graph ...")
     if builder.cache_hit:
         graph = GraphBuilder.build_from_cached(vfs)
-        chain = None  # not needed — deps already in node.dependencies
+        chain = None  # not needed -- deps already in node.dependencies
         logger.info(
             "Graph built from cache: %d nodes, %d edges",
             graph.node_count, graph.edge_count,
@@ -732,7 +732,7 @@ def _build_store(
             ", ".join(sorted(entry_points)[:5]),
         )
     else:
-        logger.info("No entry points — dead file analysis will be skipped")
+        logger.info("No entry points -- dead file analysis will be skipped")
 
     # 4 -- Run analyzers via ResultStore pipeline
     base_paths = {n.virtual_path for n in vfs.get_all_active() if n.source_type == "game"} if vfs else set()
