@@ -73,8 +73,9 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "--specpath", str(SPEC_DIR),
         # lib + launcher separation
         "--onedir",
-        # strip debug symbols from binaries
-        "--strip",
+        # strip debug symbols from binaries (Linux only; on Windows the CI
+        # strip tool may corrupt .pyd files, making python311.dll unloadable)
+        *([] if sys.platform == "win32" else ["--strip"]),
         # optimization level 1 (docstrings stripped, bytecode optimized)
         "--optimize", "1",
         # UPX compression (optional: ~40% smaller exe, slower build)
