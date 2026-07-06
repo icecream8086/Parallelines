@@ -41,7 +41,10 @@ jobs:
 
       - name: Install system dependencies (Windows)
         if: matrix.os == 'windows-latest'
-        run: choco install gtk-runtime -y
+        shell: pwsh
+        run: |
+          choco install gtk-runtime -y
+          echo "C:\Program Files\GTK3-Runtime Win64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Python dependencies
         run: |
