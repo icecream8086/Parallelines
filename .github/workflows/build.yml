@@ -32,19 +32,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install system dependencies (Linux)
         if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt update
           sudo apt install -y python3-dev binutils libcairo2-dev
-
-      - name: Install system dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          choco install gtk-runtime -y
-          echo "C:\Program Files\GTK3-Runtime Win64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Python dependencies
         run: |
@@ -65,6 +60,16 @@ jobs:
 
       - name: Generate icon
         run: python scripts/generate_ico.py
+
+      - name: Cache PyInstaller analysis
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pyinstaller
+            ~/AppData/Local/pyinstaller
+          key: pyinstaller-${{ matrix.os }}-${{ hashFiles('pyproject.toml', 'src/**/*.py') }}
+          restore-keys: |
+            pyinstaller-${{ matrix.os }}-
 
       - name: Run tests
         run: python -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
