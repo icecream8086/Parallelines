@@ -1,0 +1,9 @@
+{
+  "_comment": "禁用的 addon — 列出所有已禁用但文件仍存在的 addon。这些包的文件不参与 VFS 裁决，但占用磁盘空间。",
+  "_usage": "store.execute(json.load(open('queries/disabled_addons.json')))",
+  "select": ["source_name", "mod_type", "total_files", "dead_files", "active_files"],
+  "from": "mod_types",
+  "where": {"eq": ["is_disabled", true]},
+  "order_by": {"by": "total_files", "dir": "desc"},
+  "limit": 50
+}

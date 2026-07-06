@@ -1,0 +1,10 @@
+{
+  "_comment": "按来源统计死文件 — 每个包有多少死文件，按死文件数降序。数量大的包可能是废案或替换 mod。",
+  "_usage": "store.execute(json.load(open('queries/dead_by_source.json')))",
+  "select": ["source_name", "dead_count"],
+  "from": "files",
+  "where": {"eq": ["is_dead", true]},
+  "group_by": {"by": ["source_name"], "agg": {"dead_count": "count"}},
+  "order_by": {"by": "dead_count", "dir": "desc"},
+  "limit": 30
+}

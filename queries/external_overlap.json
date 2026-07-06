@@ -1,0 +1,13 @@
+{
+  "_comment": "S9 外部 VPK 覆盖清单 — 外部 VPK 中与当前环境同名路径的文件。用 JSON DSL 的基本 inner join 表达。",
+  "_note": "此查询仅列出路径交集。要区分 override/overridden/new_files 需用 Python API（涉及 ext_priority > priority 跨列比较，JSON DSL 不支持）。见 cli.py:_query_reference_overrides()。",
+  "_usage": "store.execute(json.load(open('queries/external_overlap.json')))",
+  "select": [["external_files", "virtual_path"], ["external_files", "ext_source_name"], ["external_files", "ext_file_hash"], ["files", "source_name"], ["files", "file_hash"]],
+  "from": "external_files",
+  "join": {
+    "type": "inner",
+    "with": "files",
+    "on": {"eq": [["external_files", "virtual_path"], ["files", "virtual_path"]]}
+  },
+  "limit": 200
+}

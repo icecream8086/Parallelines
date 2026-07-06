@@ -1,0 +1,8 @@
+{
+  "_comment": "全局脚本 — 不在 maps/ 目录下的活跃 .nut 脚本。这些脚本影响所有地图，修改风险最高。",
+  "_usage": "store.execute(json.load(open('queries/global_scripts.json')))",
+  "select": ["virtual_path", "source_name", "source_type"],
+  "from": "global_scripts",
+  "order_by": {"by": "source_name", "dir": "asc"},
+  "limit": 100
+}

@@ -1,0 +1,8 @@
+{
+  "_comment": "级联覆盖链 — 同名文件被 3 个以上来源提供。中间的版本可能导致依赖断裂。",
+  "_usage": "store.execute(json.load(open('queries/cascade_overrides.json')))",
+  "select": ["virtual_path", "active_source"],
+  "from": "cascade_overrides",
+  "order_by": {"by": "virtual_path", "dir": "asc"},
+  "limit": 100
+}

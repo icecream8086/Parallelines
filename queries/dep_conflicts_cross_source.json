@@ -1,0 +1,9 @@
+{
+  "_comment": "依赖断裂（跨源） — 文件 A 引用了 B，但 B 的实际提供者与 A 不在同一个 VPK。这是跨 addon 的隐式依赖。",
+  "_usage": "store.execute(json.load(open('queries/dep_conflicts_cross_source.json')))",
+  "select": ["from_path", "to_path", "expected_source", "actual_source"],
+  "from": "dep_conflicts",
+  "where": {"neq": ["actual_source", "MISSING"]},
+  "order_by": {"by": "from_path", "dir": "asc"},
+  "limit": 200
+}

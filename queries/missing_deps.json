@@ -1,0 +1,9 @@
+{
+  "_comment": "缺失依赖 — 文件 A 引用了 B，但 B 的预期提供者不是实际提供者（或被完全删除）。actual_source=MISSING 表示文件不存在于任何 VPK。",
+  "_usage": "store.execute(json.load(open('queries/missing_deps.json')))",
+  "select": ["from_path", "to_path", "expected_source", "actual_source"],
+  "from": "dep_conflicts",
+  "where": {"eq": ["actual_source", "MISSING"]},
+  "order_by": {"by": "from_path", "dir": "asc"},
+  "limit": 200
+}

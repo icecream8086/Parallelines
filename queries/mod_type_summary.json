@@ -1,0 +1,16 @@
+{
+  "_comment": "Mod 分类汇总 — 按 mod_type 分组统计各类型的包数和文件分布。类型: map/replacement/script/resource_pack/fragment/disabled。",
+  "_usage": "store.execute(json.load(open('queries/mod_type_summary.json')))",
+  "select": ["mod_type", "pkg_count", "total_files", "dead_files", "active_files"],
+  "from": "mod_types",
+  "group_by": {
+    "by": ["mod_type"],
+    "agg": {
+      "pkg_count": "count",
+      "total_files": ["sum", "total_files"],
+      "dead_files": ["sum", "dead_files"],
+      "active_files": ["sum", "active_files"]
+    }
+  },
+  "order_by": {"by": "pkg_count", "dir": "desc"}
+}

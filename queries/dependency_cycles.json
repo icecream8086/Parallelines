@@ -1,0 +1,8 @@
+{
+  "_comment": "依赖循环 — 依赖图中的环路：A→B→C→A。环路会导致引擎加载顺序不确定。",
+  "_usage": "store.execute(json.load(open('queries/dependency_cycles.json')))",
+  "select": ["cycle", "length"],
+  "from": "dependency_cycles",
+  "order_by": {"by": "length", "dir": "asc"},
+  "limit": 50
+}

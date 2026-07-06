@@ -61,8 +61,12 @@ class QueryValidator:
         errors += QueryValidator._validate_source(query.source)
 
         # R1 — Column existence
+        # When group_by is present, aggregation output names are also valid columns.
+        r1_allowed = set(all_columns)
+        if query.group_by is not None:
+            r1_allowed.update(query.group_by.aggregations.keys())
         for ref in refs:
-            if ref.column not in all_columns:
+            if ref.column not in r1_allowed:
                 errors.append(
                     f"R1: Column '{ref.column}' does not exist in relation '{source_name}'"
                 )

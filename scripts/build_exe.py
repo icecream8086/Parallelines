@@ -81,6 +81,8 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "--collect-data", "parallelines",
         "--collect-data", "srctools",
         "--collect-data", "textual",
+        # bundle queries/ for --query / --list-presets
+        "--add-data", f"queries{os.pathsep}queries",
     ]
 
     # Exclude unnecessary modules to reduce size

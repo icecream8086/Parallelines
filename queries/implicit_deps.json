@@ -1,0 +1,8 @@
+{
+  "_comment": "隐式跨 addon 依赖 — addon A 的文件被 addon B 引用，但 A 和 B 之间没有声明依赖关系。这些是潜在的'安装 B 但不装 A 就报错'的陷阱。",
+  "_usage": "store.execute(json.load(open('queries/implicit_deps.json')))",
+  "select": ["dependent_addon", "provider_addon", "virtual_path"],
+  "from": "implicit_deps",
+  "order_by": {"by": "dependent_addon", "dir": "asc"},
+  "limit": 100
+}

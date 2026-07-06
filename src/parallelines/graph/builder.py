@@ -67,6 +67,28 @@ class GraphBuilder:
     # Public API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def build_from_cached(vfs) -> DependencyGraph:
+        """Build graph directly from cached ``node.dependencies`` — zero I/O.
+
+        Used when VFS was restored from SSD cache and every active
+        :class:`~parallelines.types.FileNode` already has its dependency set
+        populated from ``dependencies.parquet``.
+        """
+        graph = DependencyGraph()
+        for node in vfs.get_all_active():
+            if node.is_redundant or not node.dependencies:
+                continue
+            graph.add_edges(
+                [(node.virtual_path, dep) for dep in node.dependencies]
+            )
+        logger.debug(
+            "Graph built from cache: %d nodes, %d edges",
+            graph.node_count,
+            graph.edge_count,
+        )
+        return graph
+
     def build(self) -> DependencyGraph:
         """Iterate all active files, extract dependencies, build graph.
 

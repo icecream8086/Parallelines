@@ -169,6 +169,24 @@ class VfsBuilder:
 
         return vfs
 
+    def save_edges(self, vfs) -> None:
+        """Persist dependency edges from *vfs* to ``dependencies.parquet``.
+
+        Must be called *after* :class:`~parallelines.graph.builder.GraphBuilder`
+        has populated :attr:`FileNode.dependencies` on active nodes.
+        """
+        edge_records: list[dict[str, str]] = []
+        for node in vfs.get_all_active():
+            for dep in node.dependencies:
+                edge_records.append({"from": node.virtual_path, "to": dep})
+        edges_df = (
+            pd.DataFrame(edge_records)
+            if edge_records
+            else pd.DataFrame(columns=["from", "to"])
+        )
+        self._cache.save_edges(edges_df)
+        logger.debug("Edge cache saved: %d edges", len(edge_records))
+
     def invalidate_cache(self) -> None:
         """Remove all cached VPK analysis data (next run will rebuild)."""
         self._cache.invalidate()
@@ -367,16 +385,8 @@ class VfsBuilder:
 
             files_df = pd.DataFrame(records)
 
-            # Collect dependency edges from active FileNodes
-            edge_records: list[dict[str, str]] = []
-            for node in vfs.get_all_active():
-                for dep in node.dependencies:
-                    edge_records.append({"from": node.virtual_path, "to": dep})
-            edges_df = (
-                pd.DataFrame(edge_records)
-                if edge_records
-                else pd.DataFrame(columns=["from", "to"])
-            )
+            # Edges are saved separately after GraphBuilder finishes.
+            edges_df = pd.DataFrame(columns=["from", "to"])
 
             meta = {
                 "version": "1.0",

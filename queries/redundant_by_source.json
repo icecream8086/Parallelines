@@ -1,0 +1,10 @@
+{
+  "_comment": "按来源统计冗余文件 — 每个包有多少文件被更高优先级的包覆盖。数量大的包是'被压制'的受害者。",
+  "_usage": "store.execute(json.load(open('queries/redundant_by_source.json')))",
+  "select": ["source_name", "redundant_count"],
+  "from": "files",
+  "where": {"eq": ["is_redundant", true]},
+  "group_by": {"by": ["source_name"], "agg": {"redundant_count": "count"}},
+  "order_by": {"by": "redundant_count", "dir": "desc"},
+  "limit": 30
+}

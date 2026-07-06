@@ -1,0 +1,14 @@
+{
+  "_comment": "死文件清单 — 找出所有不可达且属于 addon 的文件。适合评估哪些 addon 的素材完全没被引用。",
+  "_usage": "store.execute(json.load(open('queries/dead_files.json')))",
+  "select": ["virtual_path", "source_name", "source_type", "priority", "file_size"],
+  "from": "files",
+  "where": {
+    "and": [
+      {"eq": ["is_dead", true]},
+      {"neq": ["source_type", "game"]}
+    ]
+  },
+  "order_by": {"by": "source_name", "dir": "asc"},
+  "limit": 200
+}

@@ -1,0 +1,9 @@
+{
+  "_comment": "孤立包 — 找出 dead_file_count > 0 的包，按死文件数降序排列。完全孤立的包（dead = total）可安全删除。",
+  "_usage": "store.execute(json.load(open('queries/isolated_packages.json')))",
+  "select": ["source_name", "dead_file_count"],
+  "from": "isolated",
+  "where": {"gt": ["dead_file_count", 0]},
+  "order_by": {"by": "dead_file_count", "dir": "desc"},
+  "limit": 50
+}

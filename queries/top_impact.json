@@ -1,0 +1,8 @@
+{
+  "_comment": "影响面 Top 20 — 被最多其他文件依赖的文件。这些是关键枢纽文件，修改或删除它们的影响最大。",
+  "_usage": "store.execute(json.load(open('queries/top_impact.json')))",
+  "select": ["virtual_path", "source_name", "impact_count"],
+  "from": "impact",
+  "order_by": {"by": "impact_count", "dir": "desc"},
+  "limit": 20
+}

@@ -1,0 +1,9 @@
+{
+  "_comment": "按来源统计文件数 — 每个 source_name（VPK/addon）各有多少文件，按数量降序。快速定位体积最大的包。",
+  "_usage": "store.execute(json.load(open('queries/file_count_by_source.json')))",
+  "select": ["source_name", "cnt"],
+  "from": "files",
+  "group_by": {"by": ["source_name"], "agg": {"cnt": "count"}},
+  "order_by": {"by": "cnt", "dir": "desc"},
+  "limit": 30
+}

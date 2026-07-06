@@ -1,0 +1,8 @@
+{
+  "_comment": "入口点类型统计 — 按 source_type 分组统计入口点数量。类型: manifest/map/script/user_specified。",
+  "_usage": "store.execute(json.load(open('queries/entry_point_types.json')))",
+  "select": ["source_type", "cnt"],
+  "from": "entry_points",
+  "group_by": {"by": ["source_type"], "agg": {"cnt": "count"}},
+  "order_by": {"by": "cnt", "dir": "desc"}
+}

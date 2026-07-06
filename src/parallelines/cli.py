@@ -292,6 +292,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Preset query template for external VPK analysis (default: all)",
     )
     parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        default=False,
+        help="Skip the cold-build confirmation prompt (useful for scripting)",
+    )
+    parser.add_argument(
+        "--query",
+        type=str,
+        default=None,
+        metavar="QUERY",
+        help="Run a query after analysis: preset name or inline JSON DSL",
+    )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        default=False,
+        help="List available query presets and exit",
+    )
+    parser.add_argument(
         "--sv-pure",
         type=str,
         default=None,
@@ -351,6 +370,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _main(argv: list[str] | None = None) -> int:
+    # Allow --list-presets without --game
+    if argv is None:
+        argv = sys.argv[1:]
+    if "--list-presets" in argv:
+        _list_presets()
+        return 0
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -579,6 +605,38 @@ def _build_store(
     # 1 -- Build VFS (with optional cache)
     use_cache = not getattr(args, "no_cache", False)
 
+    # Cold-build confirmation — first run or --no-cache can take 2-3 min of heavy I/O.
+    if not getattr(args, "yes", False):
+        cache_dir = Path(config.general.cache_dir or "./cache")
+        cache_ready = (
+            use_cache
+            and (cache_dir / "meta.json").exists()
+            and (cache_dir / "all_files.parquet").exists()
+            and (cache_dir / "dependencies.parquet").exists()
+        )
+        if not cache_ready:
+            print()
+            print("=" * 60)
+            print("  ⚠  冷启动模式 — 需要读取所有 VPK 文件内容")
+            print()
+            if not use_cache:
+                print("  --no-cache 已指定，将跳过 SSD 缓存重建依赖图。")
+            else:
+                print("  这是首次运行（或缓存已失效），需要解析 VPK 文件。")
+            print("  预计耗时：2–3 分钟，期间磁盘 I/O 会很高。")
+            print()
+            print("  如果已有缓存，去掉 --no-cache 即可秒级启动。")
+            print("=" * 60)
+            try:
+                answer = input("  确认继续？[y/N] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\n  已取消。")
+                return None, None
+            if answer != "y":
+                print("  已取消。使用 --yes 跳过此提示。")
+                return None, None
+            print()
+
     builder = VfsBuilder(
         game_root, config, use_cache=use_cache, num_workers=num_workers
     )
@@ -600,28 +658,35 @@ def _build_store(
 
     logger.info("VFS ready: %d active files", len(vfs.get_all_active()))
 
-    # 2 -- Build FileSystemChain for content reading
-    logger.info("Building file system chain ...")
-    chain = builder.get_chain()
-    if chain is not None:
-        vpk_count = sum(
-            1 for s in chain.systems if "vpk" in str(type(s[0])).lower()
-        )
-        logger.info("FileSystemChain ready (%d VPKs in chain)", vpk_count)
-
-    # 3 -- Build dependency graph
+    # 2 -- Build dependency graph (fast-path from cache when available)
     logger.info("Building dependency graph ...")
-    if chain is not None:
-        graph_builder = GraphBuilder(
-            chain, vfs, debug=(config.general.log_level == "DEBUG")
-        )
-        graph = graph_builder.build()
+    if builder.cache_hit:
+        graph = GraphBuilder.build_from_cached(vfs)
+        chain = None  # not needed — deps already in node.dependencies
         logger.info(
-            "Graph ready: %d nodes, %d edges", graph.node_count, graph.edge_count
+            "Graph built from cache: %d nodes, %d edges",
+            graph.node_count, graph.edge_count,
         )
     else:
-        logger.warning("srctools FileSystem not available; graph will be empty")
-        graph = None
+        logger.info("Building file system chain ...")
+        chain = builder.get_chain()
+        if chain is not None:
+            vpk_count = sum(
+                1 for s in chain.systems if "vpk" in str(type(s[0])).lower()
+            )
+            logger.info("FileSystemChain ready (%d VPKs in chain)", vpk_count)
+            graph = GraphBuilder(
+                chain, vfs, debug=(config.general.log_level == "DEBUG")
+            ).build()
+            logger.info(
+                "Graph ready: %d nodes, %d edges",
+                graph.node_count, graph.edge_count,
+            )
+            # Persist edges to cache so next run can skip chain + I/O.
+            builder.save_edges(vfs)
+        else:
+            logger.warning("srctools FileSystem not available; graph will be empty")
+            graph = None
 
     # 3a -- Generate Graphviz .dot if requested
     if getattr(args, "graphviz", None) and graph is not None:
@@ -766,6 +831,10 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
     path = generate_report_from_store(store, output_format, output_dir)
     logger.info("Full report saved to %s", path)
 
+    # 8 -- Run inline query if --query was specified
+    if getattr(args, "query", None):
+        _run_query_and_print(store, args.query)
+
     return 0
 
 
@@ -837,6 +906,10 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
         json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     logger.info("External VPK report saved to %s", output_path)
+
+    # 8 -- Run inline query if --query was specified
+    if getattr(args, "query", None):
+        _run_query_and_print(store, args.query)
 
     return 0
 
@@ -991,6 +1064,105 @@ def _print_reference_results(
             table.add_row([str(v) for v in row])
         print(table)
         print()
+
+
+# ── Generic query runner (--query / --list-presets) ────────────────
+
+
+def _find_queries_dir() -> Path:
+    """Locate the ``queries/`` directory (project root, cwd, or next to the exe)."""
+    from pathlib import Path as _Path
+    import sys as _sys
+
+    # When frozen (PyInstaller), queries/ lives next to the exe.
+    if getattr(_sys, "frozen", False):
+        exe_dir = _Path(_sys.executable).resolve().parent
+        candidate = exe_dir / "queries"
+        if candidate.is_dir():
+            return candidate
+
+    # Development: project root (3 levels up from this file in src/parallelines/).
+    dev_root = _Path(__file__).resolve().parent.parent.parent
+    candidate = dev_root / "queries"
+    if candidate.is_dir():
+        return candidate
+
+    # Fallback: current working directory.
+    return _Path.cwd() / "queries"
+
+
+def _list_presets() -> None:
+    """Print available query presets from the ``queries/`` directory."""
+    import json as _json
+
+    queries_dir = _find_queries_dir()
+    if not queries_dir.is_dir():
+        print(f"No queries/ directory found (looked in: {queries_dir})")
+        return
+
+    presets = sorted(
+        p for p in queries_dir.glob("*.json") if p.name != "README.md"
+    )
+    if not presets:
+        print("No presets found in queries/.")
+        return
+
+    print(f"\n{'='*60}")
+    print(f"  Available query presets ({len(presets)}):")
+    print(f"{'='*60}")
+    for p in presets:
+        try:
+            data = _json.loads(p.read_text(encoding="utf-8"))
+            comment = data.get("_comment", "(no description)")
+        except Exception:
+            comment = "(invalid JSON)"
+        print(f"  {p.stem:<35s} {comment}")
+    print()
+
+
+def _resolve_query(query_spec: str) -> dict:
+    """Resolve *query_spec* to a JSON dict.
+
+    - Starts with ``{`` → inline JSON DSL.
+    - Otherwise → preset name, loaded from ``queries/<name>.json``.
+    """
+    import json as _json
+
+    spec = query_spec.strip()
+    if spec.startswith("{"):
+        return _json.loads(spec)
+
+    # Preset name — try queries/<name>.json
+    queries_dir = _find_queries_dir()
+    preset_path = queries_dir / f"{spec}.json"
+    if not preset_path.is_file():
+        # Also try the bare path
+        preset_path = _Path(spec)
+    if not preset_path.is_file():
+        raise FileNotFoundError(
+            f"Query preset '{spec}' not found in {queries_dir} "
+            f"and not an inline JSON query. Use --list-presets to see available presets."
+        )
+    return _json.loads(preset_path.read_text(encoding="utf-8"))
+
+
+def _run_query_and_print(store, query_spec: str) -> None:
+    """Execute *query_spec* against *store* and print results."""
+    from prettytable import PrettyTable
+
+    query_dict = _resolve_query(query_spec)
+    result = store.execute(query_dict)
+
+    comment = query_dict.get("_comment", "Query result")
+    table = PrettyTable()
+    table.title = f"{comment}: {len(result)} rows"
+    table.field_names = list(result.columns)
+    table.align = "l"
+    for row in result.rows:
+        table.add_row([str(v) for v in row])
+    print()
+    print(table)
+    print()
 
 
 if __name__ == "__main__":
