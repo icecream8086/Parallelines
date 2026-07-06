@@ -14,11 +14,13 @@ on:
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 
     steps:
@@ -29,36 +31,53 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-22.04'
         run: |
-          python -m pip install --upgrade pip
+          sudo apt update
+          sudo apt install -y python3-dev binutils
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
           pip install -e ".[dev]"
 
-      - name: Build minimal exe
-        run: python scripts/build_exe.py --minimal
-
-      - name: Package dist as zip
+      - name: Resolve artifact name
+        id: artifact
         shell: bash
         run: |
           VERSION=$(python -c "from importlib.metadata import version; print(version('parallelines'))")
-          ARTIFACT="parallelines-${VERSION}-win64-minimal.zip"
-          cd dist
-          7z a -tzip "../${ARTIFACT}" parallelines/
-          cd ..
-          echo "ARTIFACT=${ARTIFACT}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            NAME="parallelines-$VERSION-win64-minimal.zip"
+          else
+            NAME="parallelines-$VERSION-linux-x86_64-minimal.tar.gz"
+          fi
+          echo "NAME=$NAME" >> $GITHUB_OUTPUT
+
+      - name: Build minimal binary
+        run: python scripts/build_exe.py --minimal
+
+      - name: Package dist (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          & "C:\Program Files\7-Zip\7z.exe" a -tzip "${{ steps.artifact.outputs.NAME }}" .\dist\parallelines\*
+
+      - name: Package dist (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          cd dist && tar -czf "../${{ steps.artifact.outputs.NAME }}" parallelines/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT }}
-          path: ${{ env.ARTIFACT }}
+          name: ${{ steps.artifact.outputs.NAME }}
+          path: ${{ steps.artifact.outputs.NAME }}
           retention-days: 7
 
-      - name: Release
+      - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: "v${{ env.VERSION }}"
-          files: ${{ env.ARTIFACT }}
+          files: ${{ steps.artifact.outputs.NAME }}
           generate_release_notes: true
