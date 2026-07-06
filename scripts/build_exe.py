@@ -143,6 +143,16 @@ def build_exe(minimal: bool = False) -> Path:
     _pyinstaller(minimal=minimal)
     out_dir = DIST_DIR / "parallelines"
 
+    # Copy docs and README next to the exe (PyInstaller onedir puts everything in _internal/)
+    import shutil as _shutil
+    for item in ["README.md", "docs"]:
+        src = PROJECT_ROOT / item
+        dst = out_dir / item
+        if src.is_file():
+            _shutil.copy2(src, dst)
+        elif src.is_dir() and not dst.exists():
+            _shutil.copytree(src, dst)
+
     print(f"\n[OK]Build complete: {out_dir}")
     print(f"   Launcher: {out_dir / 'parallelines.exe'}")
     print(f"   Library:  {out_dir / '_internal' / 'parallelines'}")

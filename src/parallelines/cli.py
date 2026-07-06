@@ -108,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--game-root",
         type=str,
         default="",
-        help="Game root directory (containing gameinfo.txt)",
+        help="Directory containing gameinfo.txt (e.g. .../common/Left 4 Dead 2/left4dead2 for L4D2)",
     )
     parser.add_argument(
         "--config",

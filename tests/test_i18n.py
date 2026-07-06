@@ -21,7 +21,7 @@ def _reset_language() -> None:
 def test_set_language_zh() -> None:
     """Set language to 'zh' and verify Chinese translation."""
     set_language("zh")
-    assert _("app.title") == "Parallelines — Source 引擎 VPK 资源分析工具"
+    assert _("app.title") == "Parallelines -- Source 引擎 VPK 资源分析工具"
     assert _("report.ok") == "正常"
     assert _("cli.analyze") == "分析"
 
@@ -29,7 +29,7 @@ def test_set_language_zh() -> None:
 def test_set_language_en() -> None:
     """Set language to 'en' and verify English translation."""
     set_language("en")
-    assert _("app.title") == "Parallelines — Source Engine VPK Resource Analysis Tool"
+    assert _("app.title") == "Parallelines -- Source Engine VPK Resource Analysis Tool"
     assert _("report.ok") == "OK"
     assert _("cli.analyze") == "Analyze"
 

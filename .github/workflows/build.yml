@@ -6,6 +6,7 @@ on:
     paths:
       - "pyproject.toml"
       - "src/**"
+      - "tests/**"
       - "scripts/build_exe.py"
       - "queries/**"
   pull_request:
@@ -54,6 +55,9 @@ jobs:
           fi
           echo "NAME=$NAME" >> $GITHUB_OUTPUT
 
+      - name: Run tests
+        run: python -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
+
       - name: Build minimal binary
         run: python scripts/build_exe.py --minimal
 
@@ -61,7 +65,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          & "C:\Program Files\7-Zip\7z.exe" a -tzip "${{ steps.artifact.outputs.NAME }}" .\dist\parallelines\*
+          & "C:\Program Files\7-Zip\7z.exe" a -tzip -r "${{ steps.artifact.outputs.NAME }}" .\dist\parallelines\*
 
       - name: Package dist (Linux)
         if: matrix.os == 'ubuntu-22.04'

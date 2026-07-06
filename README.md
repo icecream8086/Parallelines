@@ -83,9 +83,35 @@ python -m parallelines --list-presets
 python -m parallelines --game l4d2 --external "Downloads/pesaro.vpk"
 ```
 
+### REPL 交互模式
+
+分析完成后常驻内存，交互式 JSON DSL 查询：
+
+```bash
+python -m parallelines --game l4d2 --repl
+```
+
+```
+l4d2> {"select":["source_name"],"from":"files","limit":5}
++----------------+-------------+
+| source_name    | source_type |
++----------------+-------------+
+| 1621225890.vpk | vpk         |
++----------------+-------------+
+
+l4d2> .tables                    # 列出所有 Relation
+l4d2> .schema hash_conflicts     # 查看表结构
+l4d2> .mode json                 # 切换输出格式
+l4d2> .external pesaro.vpk       # 加载外部 VPK
+l4d2> .save report.json          # 保存分析结果
+l4d2> .exit
+```
+
+支持命令历史 (Tab 补全)、4 种输出格式 (table/vertical/json/csv)、分页、`.analyze` 重建分析、`.load` 恢复存档。
+
 ### SSD 缓存
 
-首次分析后自动缓存为 Parquet 格式，后续启动秒级完成（热缓存 ~15s vs 冷启动 ~2min）。
+首次分析后自动缓存为 Parquet 格式，后续启动直接复用，跳过 VPK 解析和依赖提取。
 
 ---
 
