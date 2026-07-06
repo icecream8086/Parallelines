@@ -17,6 +17,13 @@ from parallelines.engine.query_ast import (
 from parallelines.engine.store import ResultStore
 
 
+def _type_name(tp: type | str) -> str:
+    """Get the string name of a type annotation (type object or string)."""
+    if isinstance(tp, str):
+        return tp
+    return tp.__name__
+
+
 class QueryValidationError(Exception):
     """Raised when a query fails schema validation."""
 
@@ -163,7 +170,7 @@ class QueryValidator:
         import dataclasses
 
         if dataclasses.is_dataclass(row_type):
-            return {f.name: f.type.__name__ for f in dataclasses.fields(row_type)}
+            return {f.name: _type_name(f.type) for f in dataclasses.fields(row_type)}
         return {}
 
     @staticmethod

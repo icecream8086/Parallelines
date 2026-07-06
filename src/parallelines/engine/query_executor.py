@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from typing import Callable
 
 from parallelines.engine.query_ast import (
     BinaryPred,
@@ -34,13 +35,13 @@ class QueryExecutor:
 
         # 3. Apply where if present
         if query.where is not None:
-            relation = relation.select(
-                lambda row, pred=query.where, cols=relation.columns: (
-                    QueryExecutor._eval_predicate(  # noqa: E501
-                        pred, row, cols
-                    )
-                )
-            )
+            pred = query.where
+            cols = relation.columns
+
+            def _where_fn(row) -> bool:  # type: ignore[no-untyped-def]
+                return QueryExecutor._eval_predicate(pred, row, cols)
+
+            relation = relation.select(_where_fn)
 
         # 4. Apply group_by if present
         if query.group_by is not None:
@@ -98,15 +99,30 @@ class QueryExecutor:
         if join_type == "full":
             left = relation.join_left(with_rel, on=on_col)
             right = with_rel.join_left(relation, on=on_col)
-            seen: set = set()
-            merged: list = []
-            for row in left.rows:
-                merged.append(row)
-                seen.add(tuple(row[: len(relation.columns)]))
+
+            rel_on_idx = relation.columns.index(on_col)
+            rel_on_values: set = set()
+            for row in relation.rows:
+                v = row[rel_on_idx] if isinstance(row, tuple) else getattr(row, on_col)
+                if v is not None:
+                    rel_on_values.add(v)
+
+            # Only append right rows whose join key doesn't appear in relation
+            with_rel_on_idx = with_rel.columns.index(on_col)
+            merged: list = list(left.rows)
             for row in right.rows:
-                if tuple(row[: len(with_rel.columns)]) not in seen:
+                on_val = (
+                    row[with_rel_on_idx]
+                    if isinstance(row, tuple)
+                    else getattr(row, on_col)
+                )
+                if on_val not in rel_on_values:
                     merged.append(row)
-            return Relation(name=f"{relation.name}⟗{with_rel.name}", columns=left.columns, rows=merged)
+            return Relation(
+                name=f"{relation.name}⟗{with_rel.name}",
+                columns=left.columns,
+                rows=merged,
+            )
         raise ValueError(f"Unknown join type: {join_type}")
 
     @staticmethod
@@ -132,7 +148,7 @@ class QueryExecutor:
         group_col = group_clause.columns[0].column
         agg_spec = group_clause.aggregations
 
-        agg_fns: dict[str, callable] = {}
+        agg_fns: dict[str, Callable] = {}
         for agg_name, agg_spec_val in agg_spec.items():
             # Two formats:
             #   "count"             → simple count
@@ -143,12 +159,18 @@ class QueryExecutor:
                 agg_type, source_col = agg_spec_val[0], agg_spec_val[1]
                 if agg_type == "sum":
                     agg_fns[agg_name] = lambda rows, _col=source_col: sum(
-                        float(getattr(r, _col)) if hasattr(r, _col) else 0.0 for r in rows
+                        float(getattr(r, _col)) if hasattr(r, _col) else 0.0
+                        for r in rows
                     )
                 elif agg_type == "avg":
                     agg_fns[agg_name] = lambda rows, _col=source_col: (
-                        sum(float(getattr(r, _col)) if hasattr(r, _col) else 0.0 for r in rows)
-                        / len(rows) if rows else 0.0
+                        sum(
+                            float(getattr(r, _col)) if hasattr(r, _col) else 0.0
+                            for r in rows
+                        )
+                        / len(rows)
+                        if rows
+                        else 0.0
                     )
                 elif agg_type == "min":
                     agg_fns[agg_name] = lambda rows, _col=source_col: min(

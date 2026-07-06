@@ -83,9 +83,12 @@ class TestAstNodes:
         assert pred.right.value == 1
 
     def test_compound_pred(self):
-        pred = CompoundPred("and", [])
+        pred = CompoundPred("and", [
+            BinaryPred("eq", ColumnRef("x"), LiteralNode(1)),
+            BinaryPred("eq", ColumnRef("y"), LiteralNode(2)),
+        ])
         assert pred.op == "and"
-        assert pred.operands == []
+        assert len(pred.operands) == 2
 
     def test_source_relation(self):
         s = Source(relation="files")
@@ -97,6 +100,29 @@ class TestAstNodes:
         s = Source(subquery=sub)
         assert s.relation is None
         assert s.subquery is not None
+
+    def test_source_both_raises(self):
+        """Source with both relation and subquery raises ValueError."""
+        sub = Query([ColumnRef("x")], Source(relation="inner"))
+        with pytest.raises(ValueError, match="exactly one"):
+            Source(relation="files", subquery=sub)
+
+    def test_source_neither_raises(self):
+        """Source with neither relation nor subquery raises ValueError."""
+        with pytest.raises(ValueError, match="exactly one"):
+            Source()
+
+    def test_compound_pred_not_wrong_arity_raises(self):
+        """'not' with != 1 operand raises ValueError."""
+        with pytest.raises(ValueError, match="exactly 1"):
+            CompoundPred("not", [])
+
+    def test_compound_pred_and_wrong_arity_raises(self):
+        """'and' with < 2 operands raises ValueError."""
+        with pytest.raises(ValueError, match="at least 2"):
+            CompoundPred("and", [
+                BinaryPred("eq", ColumnRef("x"), LiteralNode(1)),
+            ])
 
     def test_query_defaults(self):
         q = Query([ColumnRef("x")], Source(relation="t"))
@@ -809,6 +835,34 @@ class TestExecutorJoin:
         assert by_path["a.txt"] is None
         assert by_path["c.txt"] is None
         assert by_path["d.txt"] is None
+
+    def test_execute_full_join(self, store: ResultStore):
+        """FULL JOIN via executor — all rows from both sides, deduped on match."""
+        conflicts_rel = Relation.from_rows(
+            "hash_conflicts",
+            [
+                HashConflictRow("a.txt", "base", "addon_x", "abc", "xyz"),
+                HashConflictRow("b.txt", "addon_x", "addon_y", "def", "ghi"),
+            ],
+        )
+        store.hash_conflicts = conflicts_rel
+        q = Query(
+            [ColumnRef("virtual_path"), ColumnRef("winner_source")],
+            Source(relation="files"),
+            join=JoinClause(
+                type="full",
+                with_source=Source(relation="hash_conflicts"),
+                on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
+            ),
+        )
+        result = QueryExecutor.execute(q, store)
+        # 4 files + 2 hash conflicts, but a.txt and b.txt matched → 4 rows total
+        assert len(result) == 4
+        by_path = {r[0]: r[1] for r in result.rows}
+        assert by_path["a.txt"] == "base"   # matched, winner_source
+        assert by_path["b.txt"] == "addon_x"
+        assert by_path["c.txt"] is None     # unmatched file
+        assert by_path["d.txt"] is None     # unmatched file
 
 
 class TestExecutorGroupBy:

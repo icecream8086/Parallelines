@@ -53,6 +53,12 @@ class CompoundPred:
     op: _Literal["and", "or", "not"]
     operands: list[Predicate]
 
+    def __post_init__(self) -> None:
+        if self.op == "not" and len(self.operands) != 1:
+            raise ValueError("'not' requires exactly 1 operand")
+        if self.op in ("and", "or") and len(self.operands) < 2:
+            raise ValueError(f"'{self.op}' requires at least 2 operands")
+
 
 Predicate = BinaryPred | LikePred | InPred | IsNullPred | CompoundPred
 
@@ -83,6 +89,12 @@ class OrderByClause:
 class Source:
     relation: str | None = None
     subquery: Query | None = None
+
+    def __post_init__(self) -> None:
+        has_rel = self.relation is not None
+        has_sub = self.subquery is not None
+        if has_rel == has_sub:
+            raise ValueError("Source must have exactly one of 'relation' or 'subquery'")
 
 
 @dataclass
