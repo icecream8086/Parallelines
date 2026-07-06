@@ -40,6 +40,7 @@ class LikePred:
 class InPred:
     column: ColumnRef
     values: list[Literal]
+    negated: bool = False
 
 
 @dataclass
@@ -60,7 +61,37 @@ class CompoundPred:
             raise ValueError(f"'{self.op}' requires at least 2 operands")
 
 
-Predicate = BinaryPred | LikePred | InPred | IsNullPred | CompoundPred
+@dataclass
+class GraphPred:
+    op: str  # "ancestor_is_map" | "descendant_is_script"
+    column: ColumnRef
+
+
+@dataclass
+class StringPred:
+    op: str  # "starts_with" | "ends_with" | "contains" | "not_contains"
+    column: ColumnRef
+    pattern: str
+
+
+@dataclass
+class ExistsPred:
+    not_exists: bool  # False = exists_in, True = not_exists_in
+    column: ColumnRef
+    target_relation: str
+    target_column: str = "virtual_path"
+
+
+Predicate = (
+    BinaryPred
+    | LikePred
+    | InPred
+    | IsNullPred
+    | CompoundPred
+    | GraphPred
+    | StringPred
+    | ExistsPred
+)
 
 
 # ── Query nodes ────────────────────────────────────────────
@@ -76,7 +107,7 @@ class JoinClause:
 @dataclass
 class GroupByClause:
     columns: list[ColumnRef]
-    aggregations: dict[str, _Literal["count", "sum", "avg", "min", "max"]]
+    aggregations: dict[str, str | list | dict]
 
 
 @dataclass
@@ -89,12 +120,17 @@ class OrderByClause:
 class Source:
     relation: str | None = None
     subquery: Query | None = None
+    graph_fn: str | None = None
+    graph_fn_arg: str | None = None
 
     def __post_init__(self) -> None:
         has_rel = self.relation is not None
         has_sub = self.subquery is not None
-        if has_rel == has_sub:
-            raise ValueError("Source must have exactly one of 'relation' or 'subquery'")
+        has_graph = self.graph_fn is not None
+        if sum([has_rel, has_sub, has_graph]) != 1:
+            raise ValueError(
+                "Source must have exactly one of 'relation', 'subquery', or 'graph_fn'"
+            )
 
 
 @dataclass
@@ -104,5 +140,6 @@ class Query:
     where: Predicate | None = None
     join: JoinClause | None = None
     group_by: GroupByClause | None = None
+    having: Predicate | None = None
     order_by: OrderByClause | None = None
     limit: int | None = None

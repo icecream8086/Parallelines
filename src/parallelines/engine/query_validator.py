@@ -6,6 +6,8 @@ from parallelines.engine.query_ast import (
     BinaryPred,
     ColumnRef,
     CompoundPred,
+    ExistsPred,
+    GraphPred,
     InPred,
     IsNullPred,
     LikePred,
@@ -13,8 +15,9 @@ from parallelines.engine.query_ast import (
     Predicate,
     Query,
     Source,
+    StringPred,
 )
-from parallelines.engine.store import ResultStore
+from parallelines.engine.store import Relation, ResultStore
 
 
 def _type_name(tp: type | str) -> str:
@@ -37,7 +40,7 @@ class QueryValidator:
 
     @staticmethod
     def validate(query: Query, store: ResultStore) -> list[str]:
-        """Run all 6 validation rules. Returns a list of error messages (empty = valid)."""
+        """Run all 7 validation rules. Returns a list of error messages (empty = valid)."""
         errors: list[str] = []
 
         # Resolve the base relation name from the source
@@ -65,6 +68,13 @@ class QueryValidator:
         r1_allowed = set(all_columns)
         if query.group_by is not None:
             r1_allowed.update(query.group_by.aggregations.keys())
+        # When join is present, join target columns are also valid.
+        if query.join is not None:
+            join_source_name = QueryValidator._resolve_source_name(query.join.with_source)
+            if join_source_name is not None:
+                join_schema = QueryValidator._get_relation_schema(join_source_name, store)
+                if join_schema is not None:
+                    r1_allowed.update(join_schema)
         for ref in refs:
             if ref.column not in r1_allowed:
                 errors.append(
@@ -81,11 +91,15 @@ class QueryValidator:
         # Walk predicates for R2 checks
         if query.where is not None:
             QueryValidator._check_predicate_types(
-                query.where, type_map, source_name, errors
+                query.where, type_map, source_name, errors, store
             )
         if query.join is not None:
             QueryValidator._check_predicate_types(
-                query.join.on, type_map, source_name, errors
+                query.join.on, type_map, source_name, errors, store
+            )
+        if query.having is not None:
+            QueryValidator._check_predicate_types(
+                query.having, type_map, source_name, errors, store
             )
 
         # R3 — Join key existence
@@ -153,13 +167,19 @@ class QueryValidator:
     def _resolve_source_name(source: Source) -> str | None:
         if source.relation is not None:
             return source.relation
+        if source.graph_fn is not None:
+            if source.graph_fn == "find_cycles":
+                return "dependency_cycles"
+            return "files"  # descendants_of/ancestors_of return FileRow-like rows
         return None  # subquery
 
     @staticmethod
     def _get_relation_schema(name: str, store: ResultStore) -> tuple[str, ...] | None:
         rel = getattr(store, name, None)
-        if rel is not None:
-            return rel.columns
+        if rel is not None and isinstance(rel, Relation):
+            return rel.columns if rel.columns else tuple(
+                f.name for f in dataclasses.fields(rel._row_type)
+            ) if rel._row_type else ()
         return None
 
     @staticmethod
@@ -187,6 +207,10 @@ class QueryValidator:
             QueryValidator._collect_predicate_refs(query.where, refs)
         if query.join is not None:
             QueryValidator._collect_predicate_refs(query.join.on, refs)
+        if query.having is not None:
+            QueryValidator._collect_predicate_refs(query.having, refs)
+        if query.order_by is not None:
+            refs.append(query.order_by.column)
 
     @staticmethod
     def _collect_predicate_refs(pred: Predicate, refs: list[ColumnRef]) -> None:
@@ -194,7 +218,9 @@ class QueryValidator:
             refs.append(pred.left)
             if isinstance(pred.right, ColumnRef):
                 refs.append(pred.right)
-        elif isinstance(pred, LikePred | InPred | IsNullPred):
+        elif isinstance(pred, LikePred | InPred | IsNullPred | GraphPred | StringPred):
+            refs.append(pred.column)
+        elif isinstance(pred, ExistsPred):
             refs.append(pred.column)
         elif isinstance(pred, CompoundPred):
             for op in pred.operands:
@@ -206,6 +232,7 @@ class QueryValidator:
         type_map: dict[str, str],
         relation_name: str,
         errors: list[str],
+        store=None,
     ) -> None:
         """Check type compatibility in predicates (R2)."""
         if isinstance(pred, BinaryPred):
@@ -231,6 +258,43 @@ class QueryValidator:
                 errors.append(
                     f"R2: Cannot use 'like' on non-string column '{col_name}' (type: {col_type})"
                 )
+        elif isinstance(pred, InPred):
+            col_name = pred.column.column
+            col_type = type_map.get(col_name, "")
+            for lit in pred.values:
+                if lit.value is not None and not isinstance(
+                    lit.value, (str, int, float, bool)
+                ):
+                    errors.append(
+                        f"R2: InPred value type mismatch for column '{col_name}'"
+                    )
+        elif isinstance(pred, StringPred):
+            col_name = pred.column.column
+            col_type = type_map.get(col_name, "")
+            if col_type not in ("str", "string", ""):
+                errors.append(
+                    f"R2: Cannot use '{pred.op}' on non-string column '{col_name}' (type: {col_type})"
+                )
+        elif isinstance(pred, ExistsPred):
+            if store is None:
+                errors.append("R2: Cannot validate ExistsPred without store access")
+            else:
+                target_rel = getattr(store, pred.target_relation, None)
+                if target_rel is None:
+                    errors.append(
+                        f"R2: Target relation '{pred.target_relation}' not found for exists_in/not_exists_in"
+                    )
+                else:
+                    if pred.target_column not in target_rel.columns:
+                        errors.append(
+                            f"R2: Column '{pred.target_column}' not in relation '{pred.target_relation}'"
+                        )
+        elif isinstance(pred, GraphPred):
+            col_name = pred.column.column
+            if col_name not in type_map:
+                errors.append(
+                    f"R2: Column '{col_name}' not found for {pred.op}"
+                )
         elif isinstance(pred, CompoundPred):
             if pred.op == "not" and len(pred.operands) != 1:
                 errors.append("R2: 'not' requires exactly 1 operand")
@@ -238,7 +302,7 @@ class QueryValidator:
                 errors.append(f"R2: '{pred.op}' requires at least 2 operands")
             for op in pred.operands:
                 QueryValidator._check_predicate_types(
-                    op, type_map, relation_name, errors
+                    op, type_map, relation_name, errors, store
                 )
 
     @staticmethod
@@ -260,11 +324,15 @@ class QueryValidator:
 
     @staticmethod
     def _validate_source(source: Source) -> list[str]:
-        """R0 — Source.relation and Source.subquery are mutually exclusive."""
+        """R0 — Source.relation, Source.subquery, and Source.graph_fn are mutually exclusive."""
         has_rel = source.relation is not None
         has_sub = source.subquery is not None
-        if has_rel and has_sub:
-            return ["R0: Source cannot have both 'relation' and 'subquery'"]
-        if not has_rel and not has_sub:
-            return ["R0: Source must have either 'relation' or 'subquery'"]
+        has_graph = source.graph_fn is not None
+        count = sum([has_rel, has_sub, has_graph])
+        if count > 1:
+            return [
+                "R0: Source must have at most one of 'relation', 'subquery', or 'graph_fn'"
+            ]
+        if count == 0:
+            return ["R0: Source must have one of 'relation', 'subquery', or 'graph_fn'"]
         return []

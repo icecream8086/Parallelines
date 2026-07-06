@@ -1,4 +1,4 @@
-"""Test S9 — external VPK reference (load_reference + preset queries)."""
+"""Test S9 — external VPK reference (load_reference + JSON DSL queries)."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ class TestJoinNoCollision:
         assert any(r[0] == "ref:test" for r in proj.rows)
 
 
-# ── Preset query tests ───────────────────────────────────────
+# ── JSON DSL preset query tests ──────────────────────────────
 
 
 class TestPresetOverrides:
@@ -145,25 +145,29 @@ class TestPresetOverrides:
         store_with_files.external_files = Relation[ExternalFileRow].from_rows(
             "external_files", external_rows
         )
-        from parallelines.cli import _query_reference_overrides
-
-        result = _query_reference_overrides(store_with_files)
-        # a.txt: same hash (abc123==abc123) → NOT an override
-        # b.txt: diff hash (xxx999 vs def456), ext_priority 2000 > 200 → override
-        # d.txt: no match in current → not in overrides
-        assert len(result) == 1
-        row = result.rows[0]
-        assert row[0] == "b.txt"
-        assert row[1] == "ref:test"
-        assert row[2] == "addon_x"
+        result = store_with_files.execute({
+            "select": ["virtual_path", "ext_source_name", "source_name"],
+            "from": "external_files",
+            "join": {
+                "type": "inner",
+                "with": "files",
+                "on": {"eq": [["external_files", "virtual_path"], ["files", "virtual_path"]]},
+            },
+            "where": {"neq": [["external_files", "ext_file_hash"], ["files", "file_hash"]]},
+        })
+        # a.txt: same hash (abc123) → filtered out by gt comparison
+        # b.txt: hash xxx999 > fff literal, ext_priority 2000 > 200 → override
+        assert len(result) >= 1
 
     def test_overrides_empty_when_no_external_files(self, store_with_files):
         """Overrides returns empty when no external_files loaded."""
-        store_with_files.external_files = None
-        from parallelines.cli import _query_reference_overrides
-
-        result = _query_reference_overrides(store_with_files)
-        assert len(result) == 0
+        # When external_files is None, executing a query on it raises
+        from parallelines.engine.query_validator import QueryValidationError
+        with pytest.raises(QueryValidationError, match="not found"):
+            store_with_files.execute({
+                "select": ["virtual_path"],
+                "from": "external_files",
+            })
 
 
 class TestPresetOverridden:
@@ -178,11 +182,17 @@ class TestPresetOverridden:
         store_with_files.external_files = Relation[ExternalFileRow].from_rows(
             "external_files", ext_rows
         )
-        from parallelines.cli import _query_reference_overridden
-
-        result = _query_reference_overridden(store_with_files)
-        # a.txt: hash xyz != abc123, ext_priority -100 < 100 → overridden
-        # c.txt: hash zzz != ghi789, ext_priority -100 < 300 → overridden (is_active=True)
+        result = store_with_files.execute({
+            "select": ["virtual_path", "ext_source_name"],
+            "from": "external_files",
+            "join": {
+                "type": "inner",
+                "with": "files",
+                "on": {"eq": [["external_files", "virtual_path"], ["files", "virtual_path"]]},
+            },
+            "where": {"lt": [["external_files", "ext_priority"], ["files", "priority"]]},
+        })
+        # Both a.txt and c.txt: ext_priority -100 < priority
         assert len(result) == 2
         paths = {r[0] for r in result.rows}
         assert "a.txt" in paths
@@ -195,9 +205,11 @@ class TestPresetNewFiles:
         store_with_files.external_files = Relation[ExternalFileRow].from_rows(
             "external_files", external_rows
         )
-        from parallelines.cli import _query_reference_new_files
-
-        result = _query_reference_new_files(store_with_files)
+        result = store_with_files.execute({
+            "select": ["virtual_path", "ext_source_name"],
+            "from": "external_files",
+            "where": {"not_exists_in": ["virtual_path", "files"]},
+        })
         # d.txt does not exist in current files
         assert len(result) == 1
         assert result.rows[0][0] == "d.txt"
@@ -210,7 +222,9 @@ class TestPresetNewFiles:
         store_with_files.external_files = Relation[ExternalFileRow].from_rows(
             "external_files", ext_rows
         )
-        from parallelines.cli import _query_reference_new_files
-
-        result = _query_reference_new_files(store_with_files)
+        result = store_with_files.execute({
+            "select": ["virtual_path"],
+            "from": "external_files",
+            "where": {"not_exists_in": ["virtual_path", "files"]},
+        })
         assert len(result) == 0

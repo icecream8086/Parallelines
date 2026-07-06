@@ -428,7 +428,7 @@ class TestParserAdvancedClauses:
 
     def test_parse_missing_select_raises(self):
         d = {"from": "files"}
-        with pytest.raises(KeyError):
+        with pytest.raises(QueryParseError):
             QueryParser.parse(d)
 
 
@@ -943,7 +943,7 @@ class TestExecutorEdgeCases:
 
     def test_execute_unknown_relation_raises(self, store: ResultStore):
         q = Query([LiteralNode("*")], Source(relation="ghost"))
-        with pytest.raises(ValueError, match="not found in store"):
+        with pytest.raises(ValueError, match="not a Relation"):
             QueryExecutor.execute(q, store)
 
     def test_execute_select_column_ordering(self, store: ResultStore):

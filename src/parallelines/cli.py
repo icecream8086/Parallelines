@@ -147,12 +147,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Bypass all resource limits, use maximum available",
     )
-    parser.add_argument(
-        "--tui",
-        action="store_true",
-        default=False,
-        help="Launch Textual TUI interface",
-    )
+    # TUI temporarily disabled
+    # parser.add_argument(
+    #     "--tui",
+    #     action="store_true",
+    #     default=False,
+    #     help="Launch Textual TUI interface",
+    # )
     parser.add_argument(
         "--lang",
         type=str,
@@ -284,12 +285,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["highest", "lowest"],
         help="Simulated priority for the external vpk (used with --external)",
     )
+    # --ref-query is a deprecated alias. Users can use --query external_overrides instead.
     parser.add_argument(
         "--ref-query",
         type=str,
         default="all",
         choices=["all", "overrides", "overridden", "new_files"],
-        help="Preset query template for external VPK analysis (default: all)",
+        help="[Deprecated: use --query with preset names external_overrides/external_overridden/external_new_files]",
     )
     parser.add_argument(
         "--yes", "-y",
@@ -432,15 +434,16 @@ def _main(argv: list[str] | None = None) -> int:
     mem_str = config.general.memory_limit or "auto"
     logger.info("Resources: %s workers, memory=%s", worker_str, mem_str)
 
-    if args.tui:
-        from parallelines.tui.app import ParallelinesTUI
-
-        app = ParallelinesTUI(
-            game=config.general.game,
-            game_root=config.general.game_root,
-        )
-        app.run()
-        return 0
+    # TUI temporarily disabled
+    # if args.tui:
+    #     from parallelines.tui.app import ParallelinesTUI
+    #
+    #     app = ParallelinesTUI(
+    #         game=config.general.game,
+    #         game_root=config.general.game_root,
+    #     )
+    #     app.run()
+    #     return 0
 
     if not config.general.game_root:
         parser.print_help()
@@ -871,18 +874,35 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
         vpk_path.name, ext_count, priority, args.vpk_priority,
     )
 
-    # 5 -- Run preset queries
+    # 5 -- Run queries using the generic query mechanism
     query_name = getattr(args, "ref_query", "all")
     if query_name == "all":
-        queries_to_run = ["overrides", "overridden", "new_files"]
+        queries_to_run = ["external_overrides", "external_overridden", "external_new_files"]
     else:
-        queries_to_run = [query_name]
+        # Map old names to new JSON preset names
+        name_map = {
+            "overrides": "external_overrides",
+            "overridden": "external_overridden",
+            "new_files": "external_new_files",
+        }
+        queries_to_run = [name_map.get(query_name, query_name)]
 
+    import json as _json
     results: dict[str, Relation] = {}
     for qname in queries_to_run:
-        fn = _PRESET_REFERENCE_QUERIES.get(qname)
-        if fn is not None:
-            results[qname] = fn(store)
+        queries_dir = _find_queries_dir()
+        preset_path = queries_dir / f"{qname}.json"
+        if preset_path.is_file():
+            query_dict = _json.loads(preset_path.read_text(encoding="utf-8"))
+            try:
+                results[qname] = store.execute(query_dict)
+            except Exception as e:
+                logger.warning("Query '%s' failed: %s", qname, e)
+                # Fallback to empty relation
+                results[qname] = Relation(qname, ("virtual_path",), [])
+        else:
+            logger.warning("Query preset '%s' not found", qname)
+            results[qname] = Relation(qname, ("virtual_path",), [])
 
     # 6 -- Console output
     _print_reference_results(results, ref_name, vpk_path.name, ext_count)
@@ -914,124 +934,6 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
     return 0
 
 
-# ── S9: external VPK reference preset queries ──────────────────────────
-
-
-def _query_reference_overrides(store: ResultStore) -> Relation:
-    """External VPK files that would override current active files.
-
-    Conditions: same virtual_path, ext_priority > current priority, hashes differ.
-    """
-    ext = store.external_files
-    if ext is None or len(ext) == 0:
-        return Relation(
-            "overrides",
-            ("virtual_path", "ext_source", "current_source",
-             "ext_hash", "current_hash"),
-            [],
-        )
-    cur = store.files
-    if cur is None:
-        return Relation(
-            "overrides",
-            ("virtual_path", "ext_source", "current_source",
-             "ext_hash", "current_hash"),
-            [],
-        )
-
-    active_by_path = {r.virtual_path: r for r in cur.rows if r.is_active}
-
-    rows = []
-    for e in ext.rows:
-        c = active_by_path.get(e.virtual_path)
-        if c is None:
-            continue
-        if e.ext_priority > c.priority and e.ext_file_hash != c.file_hash:
-            rows.append((
-                e.virtual_path, e.ext_source_name,
-                c.source_name, e.ext_file_hash, c.file_hash,
-            ))
-
-    return Relation(
-        "overrides",
-        ("virtual_path", "ext_source", "current_source",
-         "ext_hash", "current_hash"),
-        rows,
-    )
-
-
-def _query_reference_overridden(store: ResultStore) -> Relation:
-    """External VPK files that would be overridden by current active files.
-
-    Conditions: same virtual_path, ext_priority < current priority, hashes differ.
-    """
-    ext = store.external_files
-    if ext is None or len(ext) == 0:
-        return Relation(
-            "overridden",
-            ("virtual_path", "ext_source", "current_source",
-             "ext_hash", "current_hash"),
-            [],
-        )
-    cur = store.files
-    if cur is None:
-        return Relation(
-            "overridden",
-            ("virtual_path", "ext_source", "current_source",
-             "ext_hash", "current_hash"),
-            [],
-        )
-
-    active_by_path = {r.virtual_path: r for r in cur.rows if r.is_active}
-
-    rows = []
-    for e in ext.rows:
-        c = active_by_path.get(e.virtual_path)
-        if c is None:
-            continue
-        if e.ext_priority < c.priority and e.ext_file_hash != c.file_hash:
-            rows.append((
-                e.virtual_path, e.ext_source_name,
-                c.source_name, e.ext_file_hash, c.file_hash,
-            ))
-
-    return Relation(
-        "overridden",
-        ("virtual_path", "ext_source", "current_source",
-         "ext_hash", "current_hash"),
-        rows,
-    )
-
-
-def _query_reference_new_files(store: ResultStore) -> Relation:
-    """External VPK files with no matching virtual_path in the current environment."""
-    ext = store.external_files
-    if ext is None or len(ext) == 0:
-        return Relation(
-            "new_files",
-            ("virtual_path", "ext_source", "ext_file_hash", "ext_file_size"),
-            [],
-        )
-    cur = store.files
-    cur_paths = {r.virtual_path for r in cur.rows} if cur else set()
-
-    rows = [
-        (e.virtual_path, e.ext_source_name, e.ext_file_hash, e.ext_file_size)
-        for e in ext.rows
-        if e.virtual_path not in cur_paths
-    ]
-    return Relation(
-        "new_files",
-        ("virtual_path", "ext_source", "ext_file_hash", "ext_file_size"),
-        rows,
-    )
-
-
-_PRESET_REFERENCE_QUERIES = {
-    "overrides": _query_reference_overrides,
-    "overridden": _query_reference_overridden,
-    "new_files": _query_reference_new_files,
-}
 
 
 def _print_reference_results(
@@ -1051,9 +953,9 @@ def _print_reference_results(
     for qname, rel in results.items():
         count = len(rel)
         label = {
-            "overrides": "OVERRIDES (external wins)",
-            "overridden": "OVERRIDDEN (current wins)",
-            "new_files": "NEW FILES (no conflict)",
+            "external_overrides": "OVERRIDES (external wins)",
+            "external_overridden": "OVERRIDDEN (current wins)",
+            "external_new_files": "NEW FILES (no conflict)",
         }.get(qname, qname)
 
         table = PrettyTable()
@@ -1137,7 +1039,7 @@ def _resolve_query(query_spec: str) -> dict:
     preset_path = queries_dir / f"{spec}.json"
     if not preset_path.is_file():
         # Also try the bare path
-        preset_path = _Path(spec)
+        preset_path = Path(spec)
     if not preset_path.is_file():
         raise FileNotFoundError(
             f"Query preset '{spec}' not found in {queries_dir} "

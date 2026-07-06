@@ -1,0 +1,7 @@
+{
+  "_comment": "外部 VPK 新文件 — 当前环境中不存在的文件",
+  "select": ["virtual_path", "ext_source_name", "ext_file_hash", "ext_file_size"],
+  "from": "external_files",
+  "where": {"not_exists_in": ["virtual_path", "files"]},
+  "limit": 500
+}

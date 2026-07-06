@@ -1,0 +1,15 @@
+{
+  "_comment": "外部 VPK 被覆盖文件 — 当前优先级更高且 hash 不同，外部文件安装后不会生效",
+  "select": [["external_files", "virtual_path"], ["external_files", "ext_source_name"], ["external_files", "ext_priority"], ["external_files", "ext_file_hash"], ["files", "source_name"], ["files", "priority"], ["files", "file_hash"]],
+  "from": "external_files",
+  "join": {
+    "type": "inner",
+    "with": "files",
+    "on": {"eq": [["external_files", "virtual_path"], ["files", "virtual_path"]]}
+  },
+  "where": {"and": [
+    {"lt": [["external_files", "ext_priority"], ["files", "priority"]]},
+    {"neq": [["external_files", "ext_file_hash"], ["files", "file_hash"]]}
+  ]},
+  "limit": 500
+}

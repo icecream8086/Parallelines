@@ -1,0 +1,15 @@
+{
+  "_comment": "外部 VPK 覆盖文件 — 外部优先级更高且 hash 不同，安装后会替换当前文件",
+  "select": [["external_files", "virtual_path"], ["external_files", "ext_source_name"], ["external_files", "ext_priority"], ["external_files", "ext_file_hash"], ["files", "source_name"], ["files", "priority"], ["files", "file_hash"]],
+  "from": "external_files",
+  "join": {
+    "type": "inner",
+    "with": "files",
+    "on": {"eq": [["external_files", "virtual_path"], ["files", "virtual_path"]]}
+  },
+  "where": {"and": [
+    {"gt": [["external_files", "ext_priority"], ["files", "priority"]]},
+    {"neq": [["external_files", "ext_file_hash"], ["files", "file_hash"]]}
+  ]},
+  "limit": 500
+}

@@ -267,23 +267,28 @@ class Relation(Generic[T]):
             rows=merged,
         )
 
-    def group_by(self, key: str, agg: dict[str, Callable]) -> "Relation":
+    def group_by(
+        self, key: str | tuple[str, ...], agg: dict[str, Callable]
+    ) -> "Relation":
         """按 *key* 列分组，对每组应用聚合函数。结果行为 tuple。"""
-        if key not in self.columns:
-            raise KeyError(f"Group key '{key}' not in {self.name}.columns")
-        key_idx = self.columns.index(key)
+        if isinstance(key, str):
+            key = (key,)
+        for k in key:
+            if k not in self.columns:
+                raise KeyError(f"Group key '{k}' not in {self.name}.columns")
+        key_indices = [self.columns.index(k) for k in key]
         groups: dict = {}
         for row in self.rows:
-            k: object
+            group_key: tuple
             if isinstance(row, tuple):
-                k = row[key_idx]
+                group_key = tuple(row[idx] for idx in key_indices)
             else:
-                k = getattr(row, key)
-            groups.setdefault(k, []).append(row)
-        result_columns = (key,) + tuple(agg.keys())
+                group_key = tuple(getattr(row, k) for k in key)
+            groups.setdefault(group_key, []).append(row)
+        result_columns = tuple(key) + tuple(agg.keys())
         result_rows = [
-            (k,) + tuple(fn(group_rows) for fn in agg.values())
-            for k, group_rows in groups.items()
+            group_key + tuple(fn(group_rows) for fn in agg.values())
+            for group_key, group_rows in groups.items()
         ]
         return Relation(
             name=f"{self.name}_grouped",
@@ -452,8 +457,7 @@ class ResultStore:
         matched = [r for r in self.files.rows if r.virtual_path in reachable]
         return Relation[FileRow].from_rows("ancestors", matched)
 
-    def load_reference(self, name: str, vpk_path: str,
-                       priority: int = 2000) -> None:
+    def load_reference(self, name: str, vpk_path: str, priority: int = 2000) -> None:
         """Parse an external VPK index and load its files into ``external_files``.
 
         Args:
@@ -487,9 +491,11 @@ class ResultStore:
 
         if not entries:
             import logging
+
             logging.getLogger(__name__).warning(
                 "External VPK '%s' contains no indexable files, "
-                "external_files will be empty", name,
+                "external_files will be empty",
+                name,
             )
 
         rows = [
@@ -525,6 +531,7 @@ class ResultStore:
             "global_scripts",
             "implicit_deps",
             "mod_types",
+            "external_files",
         ):
             rel = getattr(self, attr, None)
             if rel is not None:
