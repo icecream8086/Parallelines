@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "src/**"
+      - "scripts/build_exe.py"
+      - "queries/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Build minimal exe
+        run: python scripts/build_exe.py --minimal
+
+      - name: Package dist as zip
+        shell: bash
+        run: |
+          VERSION=$(python -c "from importlib.metadata import version; print(version('parallelines'))")
+          ARTIFACT="parallelines-${VERSION}-win64-minimal.zip"
+          cd dist
+          7z a -tzip "../${ARTIFACT}" parallelines/
+          cd ..
+          echo "ARTIFACT=${ARTIFACT}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ env.ARTIFACT }}
+          retention-days: 7
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ env.VERSION }}"
+          files: ${{ env.ARTIFACT }}
+          generate_release_notes: true
