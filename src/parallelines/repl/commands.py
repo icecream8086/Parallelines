@@ -115,6 +115,9 @@ def cmd_echo(session, args: str) -> bool:
 
 def cmd_history(session, args: str) -> bool:
     """Print recent command history from the prompt_toolkit session."""
+    if session._prompt_session is None:
+        print("History unavailable (prompt_toolkit not loaded).")
+        return True
     try:
         hist = session._prompt_session.history
         items = list(hist.load_history_strings())

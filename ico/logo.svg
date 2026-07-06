@@ -1,66 +1,70 @@
-<svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+<svg width="512" height="512" viewBox="-6 -6 512 512" xmlns="http://www.w3.org/2000/svg">
     <defs>
-        <!-- 线条渐变色：靛蓝到天蓝，更具科技感 -->
+        <!-- 科技感渐变：深靛蓝到电光蓝 -->
         <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#4F46E5" /> <!-- 靛蓝 -->
-            <stop offset="100%" stop-color="#0EA5E9" /> <!-- 天蓝 -->
+            <stop offset="0%" stop-color="#4F46E5" />
+            <stop offset="100%" stop-color="#0EA5E9" />
         </linearGradient>
+
+        <!-- VPK 文件节点组件（橙底白L） -->
+        <g id="vpk-node">
+            <circle cx="0" cy="0" r="16" fill="#FFFFFF" />
+            <circle cx="0" cy="0" r="14" fill="#F97316" />
+            <path d="M -7,-7 L -2,-7 L -2,-2 L 6,-2 L 6,7 L -7,7 Z" fill="#FFFFFF" />
+            <path d="M -2,-7 L -2,-2 L 6,-2" fill="none" stroke="#F97316" stroke-width="2.5" stroke-linecap="round" />
+        </g>
+
+        <!-- DAG 逻辑节点组件（蓝底白菱形） -->
+        <g id="dag-node">
+            <circle cx="0" cy="0" r="16" fill="#FFFFFF" />
+            <circle cx="0" cy="0" r="14" fill="#0EA5E9" />
+            <polygon points="0,-5 5,0 0,5 -5,0" fill="#FFFFFF" />
+        </g>
     </defs>
 
-    <!-- 背景透明，无底色矩形 -->
+    <!-- 背景区分：左侧深灰，右侧深蓝灰 -->
+    <rect x="-6" y="-6" width="256" height="512" fill="#18181B" />
+    <rect x="250" y="-6" width="256" height="512" fill="#0E0E11" />
 
-    <!-- 左侧粗实线（象征VPK资源层并行叠加） -->
-    <g stroke="url(#lineGrad)" stroke-linecap="round" fill="none">
-        <!-- 上方粗线 -->
-        <line x1="100" y1="160" x2="250" y2="160" stroke-width="20" />
-        <!-- 下方粗线 -->
-        <line x1="100" y1="240" x2="250" y2="240" stroke-width="20" />
+    <!-- DAG 连线网络（所有线条对应收缩 6px） -->
+    <g stroke="url(#lineGrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <!-- 第一层：左侧 VPK 到中间 DAG -->
+        <line x1="10" y1="120" x2="160" y2="10" />
+        <line x1="10" y1="120" x2="160" y2="180" />
+        <line x1="10" y1="120" x2="340" y2="412" /> 
+        <line x1="10" y1="392" x2="160" y2="332" />
+        <line x1="10" y1="392" x2="160" y2="490" />
+
+        <!-- 第二层：DAG 内部交叉依赖 -->
+        <line x1="160" y1="10" x2="340" y2="256" />
+        <line x1="160" y1="180" x2="340" y2="100" />
+        <line x1="160" y1="332" x2="340" y2="100" />
+        <line x1="160" y1="332" x2="340" y2="256" />
+        <line x1="160" y1="490" x2="340" y2="412" />
+
+        <!-- 第三层：DAG 到右侧 VPK -->
+        <line x1="340" y1="100" x2="490" y2="120" />
+        <line x1="340" y1="256" x2="490" y2="120" />
+        <line x1="340" y1="256" x2="490" y2="392" />
+        <line x1="340" y1="412" x2="490" y2="392" />
     </g>
 
-    <!-- 右侧分支与网络图（象征依赖关系分析） -->
-    <g stroke="url(#lineGrad)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none">
-        <!-- 上方粗线分支 -->
-        <path d="M 250 160 L 350 120 L 500 120" />
-        <path d="M 250 160 L 350 160 L 500 160" />
-        <path d="M 250 160 L 350 200 L 500 200" />
+    <!-- 放置 DAG 逻辑层节点（蓝色） -->
+    <use href="#dag-node" x="160" y="10" />   <!-- 顶部边缘离 -6 有 6px -->
+    <use href="#dag-node" x="160" y="180" />
+    <use href="#dag-node" x="160" y="332" />
+    <use href="#dag-node" x="160" y="490" />   <!-- 底部边缘离 506 有 6px -->
+    
+    <use href="#dag-node" x="340" y="100" />
+    <use href="#dag-node" x="340" y="256" />
+    <use href="#dag-node" x="340" y="412" />
 
-        <!-- 下方粗线分支 -->
-        <path d="M 250 240 L 350 200 L 500 200" />
-        <path d="M 250 240 L 350 240 L 500 240" />
-        <path d="M 250 240 L 350 280 L 500 280" />
-
-        <!-- 右侧垂直连接线（形成依赖图） -->
-        <line x1="500" y1="120" x2="500" y2="160" />
-        <line x1="500" y1="160" x2="500" y2="200" />
-        <line x1="500" y1="200" x2="500" y2="240" />
-        <line x1="500" y1="240" x2="500" y2="280" />
-
-        <!-- 对角线连接线（增强网络结构感） -->
-        <line x1="350" y1="120" x2="500" y2="160" />
-        <line x1="350" y1="160" x2="500" y2="200" />
-        <line x1="350" y1="200" x2="500" y2="240" />
-        <line x1="350" y1="240" x2="500" y2="280" />
-        
-        <!-- 额外跨层级连接 -->
-        <line x1="350" y1="120" x2="500" y2="200" />
-        <line x1="350" y1="160" x2="500" y2="240" />
-        <line x1="350" y1="200" x2="500" y2="280" />
-    </g>
-
-    <!-- 高亮节点（依赖关系交汇点），橙色与蓝渐变形成对比 -->
-    <g fill="#F97316" stroke="#FFFFFF" stroke-width="2">
-        <!-- 左侧分支节点 -->
-        <circle cx="350" cy="120" r="7" />
-        <circle cx="350" cy="160" r="7" />
-        <circle cx="350" cy="200" r="7" />
-        <circle cx="350" cy="240" r="7" />
-        <circle cx="350" cy="280" r="7" />
-
-        <!-- 右侧交汇节点 -->
-        <circle cx="500" cy="120" r="7" />
-        <circle cx="500" cy="160" r="7" />
-        <circle cx="500" cy="200" r="7" />
-        <circle cx="500" cy="240" r="7" />
-        <circle cx="500" cy="280" r="7" />
-    </g>
+    <!-- 放置 VPK 结果层节点（橙色） -->
+    <!-- 左侧 VPK 输入层 -->
+    <use href="#vpk-node" x="10" y="120" />    <!-- 左边缘离 -6 有 6px -->
+    <use href="#vpk-node" x="10" y="392" />
+    
+    <!-- 右侧 VPK 输出层 -->
+    <use href="#vpk-node" x="490" y="120" />   <!-- 右边缘离 506 有 6px -->
+    <use href="#vpk-node" x="490" y="392" />
 </svg>

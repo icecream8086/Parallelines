@@ -1,6 +1,12 @@
 """Tab completion for the REPL."""
 from __future__ import annotations
-from prompt_toolkit.completion import WordCompleter
+
+try:
+    from prompt_toolkit.completion import WordCompleter
+    _HAS_PT = True
+except ImportError:
+    _HAS_PT = False
+
 from parallelines.engine.store import ResultStore
 
 _STORE_ATTRS = [
@@ -16,7 +22,14 @@ _META_COMMANDS = [
     ".exit", ".quit", ".history", ".echo", ".unload", ".stores",
 ]
 
-def build_completer(store: ResultStore | None = None) -> WordCompleter:
+
+def build_completer(store: ResultStore | None = None):
+    """Build a WordCompleter for meta-commands and relation names.
+
+    Returns a WordCompleter if prompt_toolkit is available, None otherwise.
+    """
+    if not _HAS_PT:
+        return None
     words = list(_META_COMMANDS)
     if store is not None:
         for attr in _STORE_ATTRS:

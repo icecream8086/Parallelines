@@ -52,8 +52,15 @@ class ReplSession:
         print()
 
         self._completer = build_completer(store)
-        self._prompt_session = _get_session(self._completer)
         has_pt = _HAS_PT
+        self._prompt_session = None
+        try:
+            self._prompt_session = _get_session(self._completer)
+        except Exception:
+            # prompt_toolkit can fail at runtime in non-standard terminals
+            # (e.g. frozen build in git bash / subprocess without Windows console).
+            # Fall back to plain input().
+            has_pt = False
 
         while True:
             try:
@@ -62,7 +69,10 @@ class ReplSession:
                         make_prompt(self.game, self.externals)
                     )
                 else:
-                    line = input(make_prompt(self.game, self.externals))
+                    base = self.game
+                    if self.externals:
+                        base += f" (ref:{'+'.join(self.externals)})"
+                    line = input(f"{base}> ")
                 if not self._dispatch(line):
                     return 0
             except KeyboardInterrupt:

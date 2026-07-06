@@ -46,6 +46,10 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
     EXCLUDE = [
         "pytest", "_pytest",
         "setuptools", "distutils",
+        # pkg_resources is pulled in by PyInstaller's pyi_rth_pkgres hook
+        # which crashes on startup (ImportError: DLL load failed for pyexpat).
+        # Excluding it prevents the hook from being added.
+        "pkg_resources",
         "jinja2", "markupsafe",
         "matplotlib", "PIL",
         "scipy", "sklearn",
@@ -56,8 +60,9 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         # pyarrow optional
         "pyarrow.flight", "pyarrow.gandiva",
         "pyarrow.parquet.encryption",
-        # textual extras
-        "textual.devtools",
+        # textual — TUI disabled, pulling it in triggers pyexpat DLL load chain
+        # via plistlib → xml.parsers.expat on some dependency paths.
+        "textual", "textual.devtools",
     ]
 
     args = [
@@ -79,7 +84,6 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         # collect data for our packages
         "--collect-data", "parallelines",
         "--collect-data", "srctools",
-        "--collect-data", "textual",
         # bundle queries/ for --query / --list-presets
         "--add-data", f"queries{os.pathsep}queries",
         # hidden imports for lazy-loaded REPL subpackage
