@@ -385,9 +385,8 @@ class VfsBuilder:
 
             files_df = pd.DataFrame(records)
 
-            # Edges are saved separately after GraphBuilder finishes.
-            edges_df = pd.DataFrame(columns=["from", "to"])
-
+            # Edges are saved separately after GraphBuilder finishes,
+            # so skip writing edges here to avoid an empty parquet file.
             meta = {
                 "version": "1.0",
                 "game_root": str(self.game_root),
@@ -402,7 +401,7 @@ class VfsBuilder:
                 },
             }
 
-            self._cache.save(files_df, edges_df, meta)
+            self._cache.save(files_df, meta)
             logger.info(
                 "Cache saved: %d entries, %s",
                 len(records),

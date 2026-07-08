@@ -109,18 +109,26 @@ class CacheManager:
     # Save / invalidate
     # ------------------------------------------------------------------
 
-    def save(self, files_df, edges_df, meta: dict) -> None:
+    def save(self, files_df, meta: dict, edges_df=None) -> None:
         """Persist analysis results to Parquet cache.
 
         Silently skips when pandas is not available (minimal build),
         in which case the next run will rebuild from disk.
+
+        Args:
+            files_df: DataFrame of file entries (saved to all_files.parquet).
+            meta: Metadata dict (saved to meta.json).
+            edges_df: Optional DataFrame of dependency edges. When None,
+                dependencies.parquet is skipped (edges are saved separately
+                via :meth:`save_edges` after GraphBuilder finishes).
         """
         if not HAS_PANDAS:
             return
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         try:
             files_df.to_parquet(self.cache_dir / "all_files.parquet")
-            edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
+            if edges_df is not None:
+                edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
         except Exception:
             return
         meta_path = self.cache_dir / "meta.json"

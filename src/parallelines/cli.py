@@ -600,6 +600,10 @@ def _build_store(
     from parallelines.graph.builder import GraphBuilder
     from parallelines.vfs.builder import VfsBuilder
 
+    if not config.general.game_root:
+        logger.error("--game-root is required for analysis")
+        return None, None
+
     game_root = Path(config.general.game_root).resolve()
     if not (game_root / "gameinfo.txt").exists():
         logger.error("gameinfo.txt not found in %s", game_root)

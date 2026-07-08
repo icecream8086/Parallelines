@@ -74,7 +74,7 @@ class TestEdgeCacheIntegrity:
         files = _sample_files()
         edges = _sample_edges()
 
-        mgr.save(files, edges, _sample_meta())
+        mgr.save(files, _sample_meta(), edges_df=edges)
 
         loaded = mgr.load_edges()
         assert len(loaded) == len(edges)
@@ -98,7 +98,7 @@ class TestEdgeCacheIntegrity:
         files = _sample_files()
         empty_edges = pd.DataFrame(columns=["from", "to"])
 
-        mgr.save(files, empty_edges, _sample_meta())
+        mgr.save(files, _sample_meta(), edges_df=empty_edges)
 
         loaded = mgr.load_edges()
         assert loaded.empty
@@ -113,7 +113,7 @@ class TestEdgeCacheIntegrity:
         edges = _sample_edges()
 
         # First write via save() to create the cache directory and parquet.
-        mgr.save(_sample_files(), edges, _sample_meta())
+        mgr.save(_sample_files(), _sample_meta(), edges_df=edges)
 
         edges_path = mgr.cache_dir / "dependencies.parquet"
         digest1 = hashlib.sha256(edges_path.read_bytes()).hexdigest()
@@ -136,7 +136,7 @@ class TestEdgeCacheIntegrity:
         mgr = _cache_manager(tmp_path)
 
         # Populate the cache.
-        mgr.save(_sample_files(), _sample_edges(), _sample_meta())
+        mgr.save(_sample_files(), _sample_meta(), edges_df=_sample_edges())
 
         cache_files = [
             mgr.cache_dir / "meta.json",
