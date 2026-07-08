@@ -47,7 +47,7 @@ jobs:
           sudo apt install -y python3-dev binutils libcairo2-dev
 
       - name: Install project package
-        run: pip install -e ".[dev,build]"
+        run: pip install ".[dev,build]"
 
       - name: Generate icon
         run: python scripts/generate_ico.py
