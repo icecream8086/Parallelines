@@ -127,19 +127,19 @@ def audit_build(dist_dir: Path) -> dict:
     # ---- Runtime checks ----
     runtime_checks = {}
     try:
-        r1 = subprocess.run([str(exe_path), "--version"], capture_output=True, text=True, timeout=15)
+        r1 = subprocess.run([str(exe_path), "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         runtime_checks["--version"] = r1.returncode == 0
     except Exception as e:
         runtime_checks["--version"] = str(e)
 
     try:
-        r2 = subprocess.run([str(exe_path), "--list-presets"], capture_output=True, text=True, timeout=15)
+        r2 = subprocess.run([str(exe_path), "--list-presets"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         runtime_checks["--list-presets"] = r2.returncode == 0
     except Exception as e:
         runtime_checks["--list-presets"] = str(e)
 
     try:
-        r3 = subprocess.run([str(exe_path), "--help"], capture_output=True, text=True, timeout=15)
+        r3 = subprocess.run([str(exe_path), "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         runtime_checks["--help"] = r3.returncode == 0
     except Exception as e:
         runtime_checks["--help"] = str(e)
