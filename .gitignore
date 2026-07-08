@@ -19,6 +19,10 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+build_output/
+build_output2/
+build_output3/
+experiments/
 *.spec
 
 # Generated icon (build product from ico/logo.svg via scripts/generate_ico.py)

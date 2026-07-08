@@ -68,6 +68,16 @@ jobs:
       - name: Build minimal binary
         run: python scripts/build_exe.py --minimal
 
+      - name: Post-build artifact audit
+        run: python scripts/ci_audit.py dist/parallelines --json audit_report.json
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-${{ matrix.os }}
+          path: audit_report.json
+          retention-days: 30
+
       - name: Package dist (Windows)
         if: matrix.os == 'windows-latest'
         run: |

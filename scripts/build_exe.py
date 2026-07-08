@@ -45,7 +45,7 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
     # Modules to exclude from the build (heavy or unnecessary)
     EXCLUDE = [
         "pytest", "_pytest",
-        "setuptools", "distutils",
+        "distutils",
         # pkg_resources is pulled in by PyInstaller's pyi_rth_pkgres hook
         # which crashes on startup (ImportError: DLL load failed for pyexpat).
         # Excluding it prevents the hook from being added.
@@ -56,10 +56,7 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "cv2", "torch",
         "tensorflow",
         # pyarrow optional modules (heavy, rarely used)
-        "pyarrow.flight", "pyarrow.gandiva",
-        # pyarrow optional
-        "pyarrow.flight", "pyarrow.gandiva",
-        "pyarrow.parquet.encryption",
+        "pyarrow.flight", "pyarrow.gandiva", "pyarrow.parquet.encryption",
         # textual — TUI disabled, pulling it in triggers pyexpat DLL load chain
         # via plistlib → xml.parsers.expat on some dependency paths.
         "textual", "textual.devtools",
@@ -84,6 +81,7 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "--noupx",
         # collect data for our packages
         "--collect-data", "parallelines",
+        "--collect-submodules", "parallelines",
         "--collect-data", "srctools",
         # bundle queries/ for --query / --list-presets
         "--add-data", f"queries{os.pathsep}queries",
@@ -94,6 +92,11 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "--hidden-import", "parallelines.repl.completer",
         "--hidden-import", "parallelines.repl.formatter",
         "--hidden-import", "parallelines.repl.prompt",
+        # hidden imports for cache subpackage (defense-in-depth:
+        # collect_submodules may return incomplete results in CI)
+        "--hidden-import", "parallelines.cache",
+        "--hidden-import", "parallelines.cache.manager",
+        "--hidden-import", "parallelines.cache.strategies",
     ]
 
     # Exclude unnecessary modules to reduce size
