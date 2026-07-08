@@ -148,8 +148,9 @@ def audit_build(dist_dir: Path) -> dict:
     fail_cnt = sum(1 for v in runtime_checks.values() if v is not True)
     report["details"]["runtime_checks"] = runtime_checks
     if fail_cnt > 0:
+        details = "; ".join(f"{k}={v}" for k, v in runtime_checks.items())
         report["status"] = "fail"
-        report["issues"].append(f"Runtime checks: {pass_cnt} passed, {fail_cnt} failed")
+        report["issues"].append(f"Runtime checks: {pass_cnt} passed, {fail_cnt} failed ({details})")
     else:
         report["details"]["runtime_all_pass"] = True
 
