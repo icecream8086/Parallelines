@@ -23,11 +23,20 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            shell: bash -l {0}
+            py: python
+            pip: pip
+          - os: windows-latest
+            shell: pwsh
+            py: conda run -n parallelines python
+            pip: conda run -n parallelines pip
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
       run:
-        shell: bash -l {0}
+        shell: ${{ matrix.shell }}
 
     steps:
       - uses: actions/checkout@v4
@@ -47,10 +56,10 @@ jobs:
           sudo apt install -y python3-dev binutils libcairo2-dev
 
       - name: Install project package
-        run: pip install -e ".[dev,build]"
+        run: ${{ matrix.pip }} install -e ".[dev,build]"
 
       - name: Generate icon
-        run: python scripts/generate_ico.py
+        run: ${{ matrix.py }} scripts/generate_ico.py
 
       - name: Cache PyInstaller analysis
         uses: actions/cache@v4
@@ -63,13 +72,13 @@ jobs:
             pyinstaller-${{ matrix.os }}-
 
       - name: Run tests
-        run: python -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
+        run: ${{ matrix.py }} -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
 
       - name: Build minimal binary
-        run: python scripts/build_exe.py --minimal
+        run: ${{ matrix.py }} scripts/build_exe.py --minimal
 
       - name: Post-build artifact audit
-        run: python scripts/ci_audit.py dist/parallelines --json audit_report.json
+        run: ${{ matrix.py }} scripts/ci_audit.py dist/parallelines --json audit_report.json
 
       - name: Upload audit report
         uses: actions/upload-artifact@v4
@@ -81,10 +90,10 @@ jobs:
       - name: Package dist (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          VERSION=$(python -c "from importlib.metadata import version; print(version('parallelines'))")
-          NAME="parallelines-$VERSION-win64-minimal.zip"
-          7z a -tzip -r "$NAME" dist/parallelines/*
-          echo "ARTIFACT_NAME=$NAME" >> $GITHUB_ENV
+          $version = & conda run -n parallelines python -c "from importlib.metadata import version; print(version('parallelines'))"
+          $name = "parallelines-$version-win64-minimal.zip"
+          7z a -tzip -r $name dist/parallelines/*
+          "ARTIFACT_NAME=$name" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Package dist (Linux)
         if: matrix.os == 'ubuntu-22.04'
