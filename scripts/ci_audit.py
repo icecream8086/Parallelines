@@ -17,20 +17,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _collect_expected_modules() -> set[str]:
-    """Derive expected parallelines submodules from the source tree.
-
-    Avoids a hardcoded list that would rot as modules are added/removed.
-    """
+    """Derive expected parallelines submodules from the source tree."""
     pkg_root = PROJECT_ROOT / "src" / "parallelines"
     modules: set[str] = {"parallelines"}
     for f in sorted(pkg_root.rglob("*.py")):
         rel = f.relative_to(pkg_root)
+        parts = list(rel.parts)
         if rel.name == "__init__.py":
-            mod = str(rel.parent).replace("\\", ".").replace("/", ".")
+            parts = parts[:-1]  # drop __init__.py
         else:
-            mod = str(rel.with_suffix("")).replace("\\", ".").replace("/", ".")
-        if mod:
-            modules.add(mod)
+            parts[-1] = rel.stem  # drop .py extension
+        mod = "parallelines." + ".".join(parts) if parts else "parallelines"
+        modules.add(mod)
     return modules
 
 
@@ -66,6 +64,15 @@ def get_pyz_modules(exe_path: Path) -> set[str]:
     return modules
 
 
+def _find_exe(dist_dir: Path) -> Path | None:
+    """Find the frozen executable in a PyInstaller onedir output."""
+    for name in ("parallelines.exe", "parallelines"):
+        candidate = dist_dir / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def audit_build(dist_dir: Path) -> dict:
     """Audit a PyInstaller build directory."""
     report: dict = {
@@ -75,13 +82,13 @@ def audit_build(dist_dir: Path) -> dict:
         "details": {},
     }
 
-    exe_path = dist_dir / "parallelines.exe"
     internal_dir = dist_dir / "_internal"
     base_lib_zip = internal_dir / "base_library.zip"
 
     # ---- File existence ----
-    if not exe_path.exists():
-        return {**report, "status": "error", "issues": ["exe not found"]}
+    exe_path = _find_exe(dist_dir)
+    if exe_path is None:
+        return {**report, "status": "error", "issues": [f"exe not found in {dist_dir}"]}
     report["details"]["exe_size"] = exe_path.stat().st_size
 
     # ---- base_library.zip check ----
