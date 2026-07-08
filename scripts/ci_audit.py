@@ -165,18 +165,18 @@ def main() -> int:
 
     report = audit_build(args.dist_dir.resolve())
 
-    # Print summary
-    status_sym = "✓" if report["status"] == "ok" else "✗"
+    # Print summary (ASCII-safe for Windows consoles)
+    ok = report["status"] == "ok"
     print(f"\n{'='*60}")
-    print(f"Audit: {args.dist_dir} [{status_sym} {report['status']}]")
+    print(f"Audit: {args.dist_dir} [{'OK' if ok else 'FAIL'} {report['status']}]")
     print(f"{'='*60}")
     print(f"  EXE size:           {report['details'].get('exe_size', 'N/A')} bytes")
     print(f"  PYZ total modules:  {report['details'].get('pyz_total_entries', 'N/A')}")
     print(f"  PYZ parallelines:   {report['details'].get('pyz_par_entries', 'N/A')}")
     if report['details'].get('all_64_present'):
-        print(f"  All 64 modules:     ✓")
+        print(f"  All 64 modules:     OK")
     if report['details'].get('runtime_all_pass'):
-        print(f"  Runtime checks:     ✓")
+        print(f"  Runtime checks:     OK")
     for issue in report["issues"]:
         print(f"  ISSUE: {issue}")
 
