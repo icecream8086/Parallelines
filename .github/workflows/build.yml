@@ -47,7 +47,7 @@ jobs:
           sudo apt install -y python3-dev binutils libcairo2-dev
 
       - name: Install project package
-        run: pip install ".[dev,build]"
+        run: pip install -e ".[dev,build]"
 
       - name: Generate icon
         run: python scripts/generate_ico.py
@@ -64,13 +64,6 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
-
-      - name: Diagnostic — verify parallelines.cache is importable
-        run: |
-          echo "=== site-packages parallelines/ tree ==="
-          python -c "import parallelines, os; root=os.path.dirname(parallelines.__file__); [print(os.path.relpath(os.path.join(r,f), root)) for r,d,fs in os.walk(root) for f in fs]"
-          echo "=== try import parallelines.cache ==="
-          python -c "import parallelines.cache; print('OK:', parallelines.cache.__file__)" || true
 
       - name: Build minimal binary
         run: python scripts/build_exe.py --minimal
