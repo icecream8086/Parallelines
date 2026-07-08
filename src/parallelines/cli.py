@@ -1085,4 +1085,9 @@ def _run_query_and_print(store, query_spec: str) -> None:
 
 
 if __name__ == "__main__":
+    # Required for Windows multiprocessing spawn mode in frozen builds
+    # (PyInstaller). Child processes re-execute the frozen exe and must
+    # not re-enter the CLI argument parser.
+    import multiprocessing
+    multiprocessing.freeze_support()
     sys.exit(main())
