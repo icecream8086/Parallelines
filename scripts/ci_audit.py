@@ -8,6 +8,7 @@ Inspects a PyInstaller onedir build for module completeness.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -125,24 +126,25 @@ def audit_build(dist_dir: Path) -> dict:
         report["issues"].append(f"CRITICAL: missing {missing_critical}")
 
     # ---- Runtime checks ----
+    # frozen exe may output Chinese text; Python 3.11 on Windows defaults to
+    # cp1252 for piped stdout. PYTHONIOENCODING=utf-8 forces UTF-8 inside the
+    # subprocess so the exe itself doesn't crash on print().
+    subp_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     runtime_checks = {}
-    try:
-        r1 = subprocess.run([str(exe_path), "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
-        runtime_checks["--version"] = r1.returncode == 0
-    except Exception as e:
-        runtime_checks["--version"] = str(e)
-
-    try:
-        r2 = subprocess.run([str(exe_path), "--list-presets"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
-        runtime_checks["--list-presets"] = r2.returncode == 0
-    except Exception as e:
-        runtime_checks["--list-presets"] = str(e)
-
-    try:
-        r3 = subprocess.run([str(exe_path), "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
-        runtime_checks["--help"] = r3.returncode == 0
-    except Exception as e:
-        runtime_checks["--help"] = str(e)
+    for label, args in [
+        ("--version", ["--version"]),
+        ("--list-presets", ["--list-presets"]),
+        ("--help", ["--help"]),
+    ]:
+        try:
+            r = subprocess.run(
+                [str(exe_path)] + args,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=15, env=subp_env,
+            )
+            runtime_checks[label] = r.returncode == 0
+        except Exception as e:
+            runtime_checks[label] = str(e)
 
     pass_cnt = sum(1 for v in runtime_checks.values() if v is True)
     fail_cnt = sum(1 for v in runtime_checks.values() if v is not True)
