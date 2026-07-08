@@ -65,6 +65,9 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
 
+      - name: Diagnostic — verify parallelines.cache is importable
+        run: python -c "import parallelines.cache; print('OK:', parallelines.cache.__file__)"
+
       - name: Build minimal binary
         run: python scripts/build_exe.py --minimal
 
