@@ -45,6 +45,11 @@ dev = [
     "pyinstaller>=6.0",
     "pywin32>=306 ; sys_platform == 'win32'",
 ]
+formal = [
+    "z3-solver>=4.16.0",
+    "hypothesis>=6.156.0",
+    "icontract>=2.7.0",
+]
 build = [
     "pyinstaller>=6.0",
     "pywin32>=306 ; sys_platform == 'win32'",
@@ -66,4 +71,11 @@ include = ["parallelines*"]
 
 [tool.setuptools.package-data]
 "parallelines" = ["py.typed"]
+
+[tool.pytest.ini_options]
+markers = [
+    "formal: 形式化验证测试 (z3 + hypothesis)",
+    "slow: 慢速测试 (>5s)",
+    "overnight: 夜间全量测试",
+]
 

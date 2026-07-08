@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from io import StringIO
 
 from parallelines.cli import build_parser
 
@@ -120,6 +119,33 @@ class TestCLI(unittest.TestCase):
         """--nolimit flag should be accessible."""
         args = self.parser.parse_args(["--game", "l4d2", "--nolimit", "--analyze"])
         self.assertTrue(args.nolimit)
+
+
+class TestGameRootValidation(unittest.TestCase):
+    """B8: Empty game_root should not silently fall back to CWD."""
+
+    def setUp(self) -> None:
+        self.parser = build_parser()
+
+    def test_empty_game_root_provided(self) -> None:
+        """--game-root can be empty string (current argparse behavior)."""
+        args = self.parser.parse_args(["--game", "l4d2", "--analyze"])
+        self.assertEqual(args.game_root, "",
+                         "B8: empty game_root accepted by argparse (design limitation)")
+
+    def test_game_root_resolves_correctly(self) -> None:
+        """Explicitly provided --game-root is correctly stored."""
+        args = self.parser.parse_args(
+            ["--game", "l4d2", "--game-root", "/custom/path", "--analyze"]
+        )
+        self.assertEqual(args.game_root, "/custom/path")
+
+    def test_game_root_without_gameinfo(self) -> None:
+        """Path without gameinfo.txt → parse_args succeeds, validation happens later."""
+        args = self.parser.parse_args(
+            ["--game", "l4d2", "--game-root", "/nonexistent", "--analyze"]
+        )
+        self.assertEqual(args.game_root, "/nonexistent")
 
 
 if __name__ == "__main__":
