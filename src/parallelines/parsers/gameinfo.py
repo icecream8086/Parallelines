@@ -135,6 +135,28 @@ def extract_vpk_mounts(search_paths: dict[str, Any]) -> list[str]:
     return extract_game_dirs(search_paths)
 
 
+def extract_all_game_dirs(search_paths: dict[str, Any]) -> list[tuple[str, str]]:
+    """Extract all ``Game*`` entries, returning ``(token, path)`` pairs.
+
+    Unlike :func:`extract_game_dirs`, this preserves the original token name
+    (e.g. ``"game update"``) so the caller can decide how to handle each
+    search-path type.
+    """
+    result: list[tuple[str, str]] = []
+    try:
+        for key, value in search_paths.items():
+            key_lower = key.lower()
+            if key_lower.startswith("game"):
+                if isinstance(value, str):
+                    result.append((key_lower, value))
+                elif isinstance(value, list):
+                    for v in value:
+                        result.append((key_lower, str(v)))
+    except Exception as exc:
+        logger.warning("Failed to extract all game dirs: %s", exc)
+    return result
+
+
 def extract_addon_roots(search_paths: dict[str, Any]) -> list[str]:
     """Extract search path values containing ``addon``."""
     result: list[str] = []

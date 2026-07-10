@@ -77,11 +77,14 @@ class GraphBuilder:
         """
         graph = DependencyGraph()
         for node in vfs.get_all_active():
-            if node.is_redundant or not node.dependencies:
+            if node.is_redundant:
                 continue
-            graph.add_edges(
-                [(node.virtual_path, dep) for dep in node.dependencies]
-            )
+            # Leaf nodes (no out-edges) are still added so ancestors_of queries work.
+            graph.add_node(node.virtual_path)
+            if node.dependencies:
+                graph.add_edges(
+                    [(node.virtual_path, dep) for dep in node.dependencies]
+                )
         logger.debug(
             "Graph built from cache: %d nodes, %d edges",
             graph.node_count,
@@ -101,6 +104,9 @@ class GraphBuilder:
             # Safety guard: skip any residual redundant nodes
             if node.is_redundant:
                 continue
+
+            # All active nodes are added to the graph (including leaves).
+            graph.add_node(node.virtual_path)
 
             ext = Path(node.virtual_path).suffix.lower()
 

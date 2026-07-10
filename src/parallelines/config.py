@@ -50,7 +50,8 @@ class AddonsConfig:
     parse_fireaxe: bool = False
     fireaxe_json_path: str = ""
     parse_addoninfo: bool = True
-    addon_state_source: str = "directory"
+    addon_state_source: str = "addonlist"
+    addonlist_path: str = ""  # empty string = use GameStrategy default
 
 
 @dataclass

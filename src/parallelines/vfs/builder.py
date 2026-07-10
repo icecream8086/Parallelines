@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 from parallelines.cache.manager import CacheManager
 
@@ -17,10 +18,11 @@ except ImportError:
     pd = None  # type: ignore[assignment]
 from parallelines.config import AppConfig, load_config
 from parallelines.exceptions import ParseError
+from parallelines.game_strategy import get_strategy
 from parallelines.parsers.gameinfo import (
     parse_gameinfo,
     extract_search_paths,
-    extract_game_dirs,
+    extract_all_game_dirs,
     extract_addon_roots,
 )
 from parallelines.parsers.vpk_parser import parse_vpk_index
@@ -86,6 +88,8 @@ class VfsBuilder:
             cpu_count = os.cpu_count() or 0
             self.num_workers = max(1, cpu_count - 1) if cpu_count > 2 else 1
 
+        self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
+
         cache_dir = self.config.general.cache_dir or "./cache"
         self._cache = CacheManager(Path(cache_dir))
         self._cache_hit = False
@@ -126,11 +130,10 @@ class VfsBuilder:
             return vfs
 
         search_paths = extract_search_paths(gameinfo_data)
-        game_dirs = extract_game_dirs(search_paths)
         addon_roots = extract_addon_roots(search_paths)
 
         # 2 -- Collect VPK manifest for cache validation
-        vpk_manifest: list[dict] = self._collect_vpk_manifest(game_dirs, addon_roots)
+        vpk_manifest: list[dict] = self._collect_vpk_manifest(search_paths, addon_roots)
 
         # 3 -- Try cache load
         self._cache_hit = False
@@ -148,7 +151,7 @@ class VfsBuilder:
             logger.info("Cache was stale or empty, rebuilding ...")
 
         # 4 -- Full rebuild: scan VPKs and directories
-        self._build_from_disk(vfs, game_dirs, addon_roots)
+        self._build_from_disk(vfs, search_paths, addon_roots)
         if HAS_TQDM:
             tqdm.write(
                 f"Building dependency graph from {len(vfs.get_all_active())} active files..."
@@ -212,23 +215,32 @@ class VfsBuilder:
     def _build_from_disk(
         self,
         vfs: VirtualFileSystem,
-        game_dirs: list[str],
+        search_paths: dict[str, Any],
         addon_roots: list[str],
     ) -> None:
-        """Full rebuild: scan VPKs and loose files from all game directories."""
+        """Full rebuild: scan VPKs and loose files from all search paths."""
         vpk_queue: list[
             tuple[str, str, int, bool]
         ] = []  # (path_str, name, priority, is_disabled)
 
+        # ── Game directories (from gameinfo.txt SearchPaths) ──────────
         base_priority = 100
-        for i, game_dir in enumerate(game_dirs):
+        all_game_dirs = extract_all_game_dirs(search_paths)
+
+        for i, (token, game_dir) in enumerate(all_game_dirs):
             resolved = self._resolve_path(game_dir)
             if resolved is None or not resolved.is_dir():
                 continue
+
             priority = base_priority - i
 
-            for vpk_file in sorted(resolved.glob("*_dir.vpk")):
+            # Scan VPKs in all Game* directories
+            for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
                 vpk_queue.append((str(vpk_file), vpk_file.name, priority, False))
+
+            # Game update directories — skip loose file scanning
+            if token in ("game update", "gameupdate"):
+                continue
 
             # Skip scanning loose files in directories outside game_root (e.g., hl2)
             try:
@@ -239,22 +251,82 @@ class VfsBuilder:
 
             self._scan_directory(vfs, resolved, resolved, priority)
 
-        # Addons
-        addon_priority = 1000
+        # ── Addons ────────────────────────────────────────────────────
+        addonlist = self._read_addonlist()
+
+        # Collect all addon VPKs with metadata
+        addon_vpks: list[tuple[Path, bool, bool, int | None]] = []
+        # (path, is_disabled, from_workshop, addonlist_order)
+
         for addon_root_dir in dict.fromkeys(addon_roots + ["addons"]):
             resolved = self._resolve_path(addon_root_dir)
             if resolved is None or not resolved.is_dir():
                 continue
-            for vpk_file in sorted(resolved.glob("*.vpk")):
-                is_disabled = vpk_file.stem.endswith("_disabled")
-                vpk_queue.append(
-                    (str(vpk_file), vpk_file.name, addon_priority, is_disabled)
-                )
-                addon_priority -= 1
 
-            for vpk_file in sorted(resolved.glob("*.vpk_disabled")):
-                vpk_queue.append((str(vpk_file), vpk_file.name, addon_priority, True))
-                addon_priority -= 1
+            # Scan addons/*.vpk
+            for vpk_file in sorted(resolved.glob(self.strategy.addon_vpk_glob)):
+                if vpk_file.suffix.lower() != ".vpk":
+                    continue
+                name = vpk_file.name
+                if name in addonlist:
+                    enabled, order = addonlist[name]
+                    addon_vpks.append((vpk_file, not enabled, False, order))
+                else:
+                    addon_vpks.append((vpk_file, False, False, None))
+
+            # Scan addons/workshop/*.vpk
+            if self.strategy.scan_workshop:
+                workshop_dir = resolved / "workshop"
+                if workshop_dir.is_dir():
+                    for vpk_file in workshop_dir.glob(self.strategy.addon_vpk_glob):
+                        if vpk_file.suffix.lower() != ".vpk":
+                            continue
+                        name = vpk_file.name
+                        ws_key = f"workshop/{name}"
+                        if ws_key in addonlist:
+                            enabled, order = addonlist[ws_key]
+                            addon_vpks.append((vpk_file, not enabled, True, order))
+                        elif name in addonlist:
+                            enabled, order = addonlist[name]
+                            addon_vpks.append((vpk_file, not enabled, True, order))
+                        else:
+                            addon_vpks.append((vpk_file, False, True, None))
+
+        # Identify disable/ directory VPKs (lowest priority, marked disabled)
+        disable_dir = self.game_root / self.strategy.disabled_addon_dir
+        if disable_dir.is_dir():
+            for vpk_file in disable_dir.glob(self.strategy.addon_vpk_glob):
+                if vpk_file.suffix.lower() == ".vpk":
+                    vpk_queue.append((str(vpk_file), vpk_file.name, -1000, True))
+
+        # Sort addon VPKs in two groups with opposite ordering semantics:
+        #   - addonlist items:  first in list  = highest priority  (ascending order)
+        #   - non-addonlist:    last (alpha)    = highest priority  (descending = reverse
+        #     alpha) because the engine mounts alphabetically then AddToHead-prepends
+        #     each one, so the last-discovered VPK ends up at the front of the search path.
+        addonlist_items = [x for x in addon_vpks if x[3] is not None]
+        non_items = [x for x in addon_vpks if x[3] is None]
+
+        addonlist_items.sort(key=lambda x: x[3])  # by addonlist line order
+
+        if self.strategy.priority_direction == "descending":
+            non_items.sort(key=lambda x: x[0].name.lower(), reverse=True)
+        else:
+            non_items.sort(key=lambda x: x[0].name.lower())
+
+        addon_vpks_sorted = addonlist_items + non_items
+
+        # Assign priorities according to strategy direction
+        if self.strategy.priority_direction == "descending":
+            total = len(addon_vpks_sorted)
+            for idx, (vpk_path, is_disabled, _from_ws, _order) in enumerate(addon_vpks_sorted):
+                priority = 1000 + (total - idx)
+                vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
+        else:
+            priority = 1000
+            for vpk_path, is_disabled, _from_ws, _order in addon_vpks_sorted:
+                vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
+                priority -= 1
 
         if self.debug:
             logger.debug("Found %d VPK(s) to parse", len(vpk_queue))
@@ -262,22 +334,57 @@ class VfsBuilder:
         # Parse all VPKs (parallel or sequential)
         self._ingest_vpks(vfs, vpk_queue)
 
+    def _read_addonlist(self) -> dict[str, tuple[bool, int]]:
+        """Read addonlist.txt, return {vpk_name: (is_enabled, line_order)}.
+
+        addonlist.txt format:
+            "addon_name.vpk"  "1"   (enabled)
+            "addon_name.vpk"  "0"   (disabled)
+
+        VPKs not listed default to enabled.
+        Smaller ``line_order`` = higher priority (listed first).
+        """
+        addonlist_path = self.game_root / self.strategy.addonlist_path
+        result: dict[str, tuple[bool, int]] = {}
+        if not addonlist_path.is_file():
+            return result
+        try:
+            lines = addonlist_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            order = 0
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Format: "vpk_name"  "1"  or  "workshop\\123.vpk"  "0"
+                parts = stripped.replace("\t", " ").split()
+                if len(parts) >= 2:
+                    name = parts[0].strip('"').replace("\\", "/")
+                    vpk_name = name.split("/")[-1] if "/" in name else name
+                    enabled = parts[1].strip('"') == "1"
+                    result[vpk_name] = (enabled, order)
+                    order += 1
+        except Exception as exc:
+            logger.warning("Failed to read addonlist.txt: %s", exc)
+        return result
+
     # ------------------------------------------------------------------
     # Cache helpers
     # ------------------------------------------------------------------
 
     def _collect_vpk_manifest(
-        self, game_dirs: list[str], addon_roots: list[str]
+        self, search_paths: dict[str, Any], addon_roots: list[str]
     ) -> list[dict]:
         """Build a manifest of all discoverable VPKs for cache validation."""
         manifest: list[dict] = []
         seen: set[str] = set()
 
-        for game_dir in game_dirs:
+        # Game VPKs from all Game* search paths
+        all_game_dirs = extract_all_game_dirs(search_paths)
+        for token, game_dir in all_game_dirs:
             resolved = self._resolve_path(game_dir)
             if resolved is None or not resolved.is_dir():
                 continue
-            for vpk_file in sorted(resolved.glob("*_dir.vpk")):
+            for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
                 if vpk_file.name in seen:
                     continue
                 seen.add(vpk_file.name)
@@ -295,11 +402,14 @@ class VfsBuilder:
                     }
                 )
 
+        # Addon VPKs (including workshop)
         for addon_root_dir in dict.fromkeys(addon_roots + ["addons"]):
             resolved = self._resolve_path(addon_root_dir)
             if resolved is None or not resolved.is_dir():
                 continue
-            for vpk_file in sorted(resolved.glob("*.vpk")):
+            for vpk_file in sorted(resolved.glob(self.strategy.addon_vpk_glob)):
+                if vpk_file.suffix.lower() != ".vpk":
+                    continue
                 if vpk_file.name in seen:
                     continue
                 seen.add(vpk_file.name)
@@ -316,6 +426,30 @@ class VfsBuilder:
                         "size": st.st_size,
                     }
                 )
+
+            # Workshop addon VPKs
+            if self.strategy.scan_workshop:
+                workshop_dir = resolved / "workshop"
+                if workshop_dir.is_dir():
+                    for vpk_file in sorted(workshop_dir.glob(self.strategy.addon_vpk_glob)):
+                        if vpk_file.suffix.lower() != ".vpk":
+                            continue
+                        if vpk_file.name in seen:
+                            continue
+                        seen.add(vpk_file.name)
+                        try:
+                            st = vpk_file.stat()
+                        except OSError:
+                            continue
+                        manifest.append(
+                            {
+                                "source_name": vpk_file.name,
+                                "name": vpk_file.name,
+                                "path": str(vpk_file),
+                                "mtime": st.st_mtime,
+                                "size": st.st_size,
+                            }
+                        )
 
         return manifest
 
@@ -444,11 +578,15 @@ class VfsBuilder:
         for vpk_file in sorted(self.game_root.glob("*_dir.vpk")):
             _add_vpk(vpk_file)
 
-        # Addon VPKs
+        # Addon VPKs (including workshop)
         addons_dir = self.game_root / "addons"
         if addons_dir.is_dir():
             for vpk_file in sorted(addons_dir.glob("*.vpk")):
                 _add_vpk(vpk_file)
+            workshop_dir = addons_dir / "workshop"
+            if workshop_dir.is_dir():
+                for vpk_file in sorted(workshop_dir.glob("*.vpk")):
+                    _add_vpk(vpk_file)
 
         # 不添加 loose files RawFileSystem — 依赖提取只需要 VPK 里的文件，
         # 整个游戏目录 (~13GB) 的 RawFileSystem 会吃掉几十 GB 内存。

@@ -13,25 +13,9 @@ from __future__ import annotations
 
 import logging
 
+from parallelines.game_strategy import GameStrategy, get_strategy
+
 logger = logging.getLogger(__name__)
-
-# Maximum number of .bsp files to automatically add as entry points.
-# Maps sorted alphabetically — the first N are typically campaign-start maps.
-P2_ENTRY_POINT_LIMIT: int = 5
-
-# Common manifest paths that the Source Engine loads at startup.  These are
-# checked against the active VFS during auto-discovery.
-_COMMON_MANIFESTS: set[str] = {
-    "scripts/soundscapes_manifest.txt",
-    "scripts/game_sounds_manifest.txt",
-    "particles/particles_manifest.txt",
-}
-
-# Well-known script / config entry points checked during auto-discovery.
-_COMMON_SCRIPT_ENTRIES: set[str] = {
-    "cfg/game.cfg",
-    "cfg/autoexec.cfg",
-}
 
 
 def _read_manifest_content(chain, manifest_path: str) -> list[str]:
@@ -63,7 +47,7 @@ def _read_manifest_content(chain, manifest_path: str) -> list[str]:
     return lines
 
 
-def discover_entry_points(vfs, chain=None) -> set[str]:
+def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
     """Auto-discover entry points from active files.
 
     Scans all active files in the VFS and returns the set of virtual paths
@@ -73,14 +57,15 @@ def discover_entry_points(vfs, chain=None) -> set[str]:
     When a *chain* is provided, manifest files are read to discover their
     listed dependencies and add those as entry points too.
 
-    Only the first :data:`P2_ENTRY_POINT_LIMIT` ``.bsp`` files (sorted
-    alphabetically) are included to avoid bloating the entry-point set with
-    rarely-played maps.
+    When *game* is provided, the corresponding :class:`GameStrategy` is used
+    to determine manifests, BSP limits, and script entry points. Otherwise
+    the default Source 1 strategy is applied.
 
     Args:
         vfs: VirtualFileSystem instance with resolved active files.
         chain: Optional ``srctools.filesys.FileSystemChain`` for reading file
             content.  When provided, manifest-listed files are also added.
+        game: Source Engine game ID (e.g. ``"l4d2"``, ``"tf2"``).
 
     Returns:
         A set of virtual paths acting as entry points.  Returns an empty set
@@ -108,21 +93,13 @@ def discover_entry_points(vfs, chain=None) -> set[str]:
         lower = node.virtual_path.lower().replace("\\", "/")
         active_paths_lower[lower] = node.virtual_path
 
+    strategy = get_strategy(game) if game else GameStrategy()
     entry_points: set[str] = set()
 
-    # 1. Known manifest paths (case-insensitive matching).
+    # 1. Known manifest paths from strategy (auto + extra).
     manifest_count = 0
-    for manifest in _COMMON_MANIFESTS:
-        if manifest in active_paths_lower:
-            entry_points.add(active_paths_lower[manifest])
-            manifest_count += 1
-            logger.debug(
-                "discover_entry_points: found manifest '%s'",
-                active_paths_lower[manifest],
-            )
-
-    # L4D2 / additional manifests that are safe to include when present.
-    for manifest in ("scripts/model_manifest.txt",):
+    all_manifests = strategy.auto_manifests + strategy.extra_manifests
+    for manifest in all_manifests:
         if manifest in active_paths_lower:
             entry_points.add(active_paths_lower[manifest])
             manifest_count += 1
@@ -158,25 +135,27 @@ def discover_entry_points(vfs, chain=None) -> set[str]:
             dep_count,
         )
 
-    # 2. .bsp files (limited to P2_ENTRY_POINT_LIMIT, sorted alphabetically).
+    # 2. .bsp files (limited by strategy.bsp_entry_limit, 0 = all).
     bsp_candidates = sorted(
         (lower, original)
         for lower, original in active_paths_lower.items()
         if lower.endswith(".bsp")
     )
+    bsp_limit = strategy.bsp_entry_limit
     bsp_count = 0
-    for lower_path, original_path in bsp_candidates[:P2_ENTRY_POINT_LIMIT]:
+    bsp_selected = bsp_candidates[:bsp_limit] if bsp_limit > 0 else bsp_candidates
+    for lower_path, original_path in bsp_selected:
         entry_points.add(original_path)
         bsp_count += 1
     if bsp_count:
         logger.debug(
-            "discover_entry_points: found %d .bsp maps (limited to %d)",
+            "discover_entry_points: found %d .bsp maps (limit=%s)",
             bsp_count,
-            P2_ENTRY_POINT_LIMIT,
+            bsp_limit if bsp_limit > 0 else "all",
         )
 
-    # 3. Common script / config entry points.
-    script_lower = {p.lower(): p for p in _COMMON_SCRIPT_ENTRIES}
+    # 3. Script / config entry points from strategy.
+    script_lower = {p.lower(): p for p in strategy.script_entries}
     for lower_path, original_path in active_paths_lower.items():
         if lower_path in script_lower:
             entry_points.add(original_path)
@@ -272,22 +251,18 @@ def get_known_entry_points(game: str) -> set[str]:
         )
         return set()
 
-    game = game.lower()
+    strategy = get_strategy(game)
 
-    if game == "l4d2":
-        logger.debug("get_known_entry_points: returning L4D2 entry points")
-        return {
-            "scripts/soundscapes_manifest.txt",
-            "scripts/game_sounds_manifest.txt",
-            "particles/particles_manifest.txt",
-            "scripts/model_manifest.txt",
-            "cfg/config.cfg",
-            "maps/*.bsp",
-        }
+    result: set[str] = set()
+    for m in strategy.auto_manifests + strategy.extra_manifests:
+        result.add(m)
+    for s in strategy.script_entries:
+        result.add(s)
+    result.add("maps/*.bsp")
 
-    # Unknown game: return the truly common set only.
     logger.debug(
-        "get_known_entry_points: unknown game '%s', returning common manifests",
+        "get_known_entry_points: returning %d entries for game '%s'",
+        len(result),
         game,
     )
-    return set(_COMMON_MANIFESTS)
+    return result

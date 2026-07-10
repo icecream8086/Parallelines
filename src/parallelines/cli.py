@@ -15,20 +15,17 @@ from parallelines.i18n import set_language, _
 logger = logging.getLogger(__name__)
 
 SUPPORTED_GAMES = {
-    # 目前已验证可直接使用的游戏
     "l4d2": "Left 4 Dead 2",
-    # ── 以下为占位符，逻辑未验证 ──
-    "l4d1": "Left 4 Dead (占位)",
-    "csgo": "Counter-Strike: Global Offensive (占位)",
-    "cs2": "Counter-Strike 2 (占位)",
-    "tf2": "Team Fortress 2 (占位)",
-    "portal2": "Portal 2 (占位)",
-    "portal1": "Portal (占位)",
-    "dota2": "Dota 2 (占位)",
-    "hl2": "Half-Life 2 (占位)",
-    "hl2ep1": "Half-Life 2: Episode One (占位)",
-    "hl2ep2": "Half-Life 2: Episode Two (占位)",
-    "sdk": "Source SDK / generic (占位)",
+    "l4d1": "Left 4 Dead",
+    "tf2": "Team Fortress 2",
+    "portal2": "Portal 2",
+    "portal": "Portal",
+    "hl2": "Half-Life 2",
+    "hl2ep1": "Half-Life 2: Episode One",
+    "hl2ep2": "Half-Life 2: Episode Two",
+    "csgo": "Counter-Strike: Global Offensive",
+    "css": "Counter-Strike: Source",
+    "dods": "Day of Defeat: Source",
 }
 
 
@@ -736,7 +733,7 @@ def _build_store(
     if getattr(args, "entry_points", None):
         entry_points = set(args.entry_points)
     else:
-        entry_points = discover_entry_points(vfs, chain=chain)
+        entry_points = discover_entry_points(vfs, chain=chain, game=config.general.game)
 
     # 3b -- If --maps was provided, expand to maps/{name}.bsp and add to set.
     if getattr(args, "maps", None):
