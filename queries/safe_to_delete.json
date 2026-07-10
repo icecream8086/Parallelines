@@ -1,0 +1,18 @@
+{
+  "_comment": "可安全删除的 addon — v2 条件聚合: count_where。按来源统计，用 count_where 分别计数活跃文件、死文件、冗余文件。active_files=0 的包没有任何文件被实际使用。",
+  "_v2_feature": "conditional aggregation: count_where + having clause",
+  "_usage": "store.execute(json.load(open('queries/safe_to_delete.json')))",
+  "select": ["source_name", "total_files", "active_files", "dead_files"],
+  "from": "files",
+  "group_by": {
+    "by": ["source_name"],
+    "agg": {
+      "total_files": "count",
+      "active_files": {"count_where": {"eq": ["is_active", true]}},
+      "dead_files": {"count_where": {"eq": ["is_dead", true]}}
+    }
+  },
+  "having": {"eq": ["active_files", 0]},
+  "order_by": {"by": "total_files", "dir": "desc"},
+  "limit": 30
+}

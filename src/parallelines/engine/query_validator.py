@@ -70,9 +70,9 @@ class QueryValidator:
         r1_allowed = set(all_columns)
         if query.group_by is not None:
             r1_allowed.update(query.group_by.aggregations.keys())
-        # When join is present, join target columns are also valid.
-        if query.join is not None:
-            join_source_name = QueryValidator._resolve_source_name(query.join.with_source)
+        # When joins are present, join target columns are also valid.
+        for jc in query.joins:
+            join_source_name = QueryValidator._resolve_source_name(jc.with_source)
             if join_source_name is not None:
                 join_schema = QueryValidator._get_relation_schema(join_source_name, store)
                 if join_schema is not None:
@@ -95,9 +95,9 @@ class QueryValidator:
             QueryValidator._check_predicate_types(
                 query.where, type_map, source_name, errors, store
             )
-        if query.join is not None:
+        for jc in query.joins:
             QueryValidator._check_predicate_types(
-                query.join.on, type_map, source_name, errors, store
+                jc.on, type_map, source_name, errors, store
             )
         if query.having is not None:
             QueryValidator._check_predicate_types(
@@ -105,11 +105,11 @@ class QueryValidator:
             )
 
         # R3 — Join key existence
-        if query.join is not None:
+        for jc in query.joins:
             join_on_cols: list[ColumnRef] = []
-            QueryValidator._collect_predicate_refs(query.join.on, join_on_cols)
+            QueryValidator._collect_predicate_refs(jc.on, join_on_cols)
             join_source_name = QueryValidator._resolve_source_name(
-                query.join.with_source
+                jc.with_source
             )
             if join_source_name is not None:
                 join_schema = QueryValidator._get_relation_schema(
@@ -150,16 +150,17 @@ class QueryValidator:
         QueryValidator._check_subquery_visibility(
             query.source, store, errors, context="source"
         )
-        if query.join is not None:
+        for jc in query.joins:
             QueryValidator._check_subquery_visibility(
-                query.join.with_source, store, errors, context="join"
+                jc.with_source, store, errors, context="join"
             )
 
         # R6 — Join type degradation (warn)
-        if query.join is not None and query.join.type == "full":
-            errors.append(
-                "R6: Full outer join is not natively supported; will be emulated as left ∪ right union"
-            )
+        for jc in query.joins:
+            if jc.type == "full":
+                errors.append(
+                    "R6: Full outer join is not natively supported; will be emulated as left ∪ right union"
+                )
 
         return errors
 
@@ -205,8 +206,8 @@ class QueryValidator:
                 refs.append(item)
         if query.where is not None:
             QueryValidator._collect_predicate_refs(query.where, refs)
-        if query.join is not None:
-            QueryValidator._collect_predicate_refs(query.join.on, refs)
+        for jc in query.joins:
+            QueryValidator._collect_predicate_refs(jc.on, refs)
         if query.having is not None:
             QueryValidator._collect_predicate_refs(query.having, refs)
         if query.order_by is not None:

@@ -129,7 +129,7 @@ class TestQuery:
         """AST-14: Query with only select and source."""
         q = Query([ColumnRef("x")], Source(relation="t"))
         assert q.where is None
-        assert q.join is None
+        assert q.joins == []
         assert q.group_by is None
         assert q.having is None
         assert q.order_by is None

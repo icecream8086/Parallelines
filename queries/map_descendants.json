@@ -1,0 +1,12 @@
+{
+  "_comment": "地图下游文件 — v2 graph_fn: descendants_of。从指定地图出发沿依赖图向下遍历所有可达文件，按来源分组。用于溯源'这个地图依赖了哪些 addon'。",
+  "_v2_feature": "graph source: descendants_of",
+  "_usage": "store.execute(json.load(open('queries/map_descendants.json')))",
+  "_note": "将 maps/c1m1_hotel.bsp 替换为实际地图路径。不存在的路径会被静默跳过。",
+  "select": ["source_name", "file_count"],
+  "from": {"descendants_of": "maps/c1m1_hotel.bsp"},
+  "where": {"not_in": ["source_name", ["base", "pak01_dir"]]},
+  "group_by": {"by": ["source_name"], "agg": {"file_count": "count"}},
+  "order_by": {"by": "file_count", "dir": "desc"},
+  "limit": 30
+}

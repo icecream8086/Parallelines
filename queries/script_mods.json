@@ -1,0 +1,16 @@
+{
+  "_comment": "脚本 Mod 检测 — v2 字符串谓词: ends_with + not_contains。找出包含 .nut VScript 文件且不在 maps/ 目录下的 addon，按脚本数量排序。这些是可能影响全局游戏逻辑的 mod。",
+  "_v2_feature": "string predicates: ends_with, not_contains",
+  "_usage": "store.execute(json.load(open('queries/script_mods.json')))",
+  "select": ["source_name", "script_count"],
+  "from": "files",
+  "where": {"and": [
+    {"ends_with": ["virtual_path", ".nut"]},
+    {"not_contains": ["virtual_path", "maps/"]},
+    {"not_contains": ["source_name", "pak01_dir"]}
+  ]},
+  "group_by": {"by": ["source_name"], "agg": {"script_count": "count"}},
+  "having": {"gte": ["script_count", 1]},
+  "order_by": {"by": "script_count", "dir": "desc"},
+  "limit": 30
+}

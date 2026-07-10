@@ -126,7 +126,7 @@ class TestAstNodes:
     def test_query_defaults(self):
         q = Query([ColumnRef("x")], Source(relation="t"))
         assert q.where is None
-        assert q.join is None
+        assert q.joins == []
         assert q.group_by is None
         assert q.order_by is None
         assert q.limit is None
@@ -332,10 +332,10 @@ class TestParserAdvancedClauses:
             },
         }
         q = QueryParser.parse(d)
-        assert q.join is not None
-        assert q.join.type == "inner"
-        assert q.join.with_source.relation == "hash_conflicts"
-        assert isinstance(q.join.on, BinaryPred)
+        assert len(q.joins) == 1
+        assert q.joins[0].type == "inner"
+        assert q.joins[0].with_source.relation == "hash_conflicts"
+        assert isinstance(q.joins[0].on, BinaryPred)
 
     def test_parse_join_right(self):
         d = {
@@ -348,8 +348,8 @@ class TestParserAdvancedClauses:
             },
         }
         q = QueryParser.parse(d)
-        assert q.join is not None
-        assert q.join.type == "right"
+        assert len(q.joins) == 1
+        assert q.joins[0].type == "right"
 
     def test_parse_group_by(self):
         d = {
@@ -529,13 +529,15 @@ class TestValidatorR6JoinTypeDegradation:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="full",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="full",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert any("R6" in e for e in errors)
@@ -544,13 +546,15 @@ class TestValidatorR6JoinTypeDegradation:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert all("R6" not in e for e in errors)
@@ -768,13 +772,15 @@ class TestExecutorJoin:
         q = Query(
             [LiteralNode("*")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         result = QueryExecutor.execute(q, store)
         # a.txt and b.txt have conflicts → 2 rows
@@ -799,13 +805,15 @@ class TestExecutorJoin:
         q = Query(
             [LiteralNode("*")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         result = QueryExecutor.execute(q, local_store)
         assert len(result) == 0
@@ -820,11 +828,13 @@ class TestExecutorJoin:
         q = Query(
             [ColumnRef("virtual_path"), ColumnRef("source_name"), ColumnRef("winner_source")],
             Source(relation="files"),
-            join=JoinClause(
-                type="left",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
-            ),
+            joins=[
+                JoinClause(
+                    type="left",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
+                ),
+            ],
         )
         result = QueryExecutor.execute(q, store)
         # 4 files, 1 hash conflict → 4 rows (3 with None winner_source)
@@ -848,11 +858,13 @@ class TestExecutorJoin:
         q = Query(
             [ColumnRef("virtual_path"), ColumnRef("winner_source")],
             Source(relation="files"),
-            join=JoinClause(
-                type="full",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
-            ),
+            joins=[
+                JoinClause(
+                    type="full",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
+                ),
+            ],
         )
         result = QueryExecutor.execute(q, store)
         # 4 files + 2 hash conflicts, but a.txt and b.txt matched → 4 rows total

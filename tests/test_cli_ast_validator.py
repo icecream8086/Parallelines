@@ -885,8 +885,8 @@ class TestB21MultiModeFlagSilentlyIgnored:
         mode_conflict_warnings = [
             m for m in warning_messages if "mode" in str(m).lower()
         ]
-        # Bug: zero warnings about mode conflict are emitted.
-        assert len(mode_conflict_warnings) == 0
+        # After fix (B025-B027): a WARNING about mode conflict should be emitted.
+        assert len(mode_conflict_warnings) >= 1
 
 
 # ── B22: check-* in REPL mode ignored (MEDIUM) ─────────────────────────

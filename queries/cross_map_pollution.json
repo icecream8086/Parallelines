@@ -1,0 +1,15 @@
+{
+  "_comment": "跨地图污染检测 — v2 graph predicate: ancestor_is_map。找出被地图间接引用的 addon 文件，按来源统计。文件数多的包是'跨地图共享'的热点，修改需谨慎。",
+  "_v2_feature": "graph predicate: ancestor_is_map + string predicate: ends_with",
+  "_usage": "store.execute(json.load(open('queries/cross_map_pollution.json')))",
+  "select": ["source_name", "file_count"],
+  "from": "files",
+  "where": {"and": [
+    {"ends_with": ["source_name", ".vpk"]},
+    {"ancestor_is_map": ["virtual_path"]}
+  ]},
+  "group_by": {"by": ["source_name"], "agg": {"file_count": "count"}},
+  "having": {"gte": ["file_count", 10]},
+  "order_by": {"by": "file_count", "dir": "desc"},
+  "limit": 30
+}

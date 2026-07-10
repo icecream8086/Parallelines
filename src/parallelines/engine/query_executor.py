@@ -36,9 +36,9 @@ class QueryExecutor:
         # 1. Resolve source → base Relation
         relation = QueryExecutor._resolve_source(query.source, store)
 
-        # 2. Apply join if present
-        if query.join is not None:
-            relation = QueryExecutor._apply_join(relation, query.join, store)
+        # 2. Apply joins if present (multi-join, left-deep tree)
+        for join_clause in query.joins:
+            relation = QueryExecutor._apply_join(relation, join_clause, store)
 
         # 3. Apply where if present
         if query.where is not None:
@@ -148,38 +148,179 @@ class QueryExecutor:
 
     @staticmethod
     def _apply_join(relation: Relation, join_clause, store: ResultStore) -> Relation:
-        """Apply a join clause using the store's join method on the join key."""
-        with_rel = QueryExecutor._resolve_source(join_clause.with_source, store)
+        """Apply a join clause using hash join (equi) or theta join (non-equi).
 
-        # Extract the join column name from the predicate (assumes eq on a single column)
-        on_col = QueryExecutor._extract_join_column(join_clause.on)
-        if on_col is None:
-            msg = "Join predicate must be a simple eq on a single column"
-            raise ValueError(msg)
-
+        Automatically selects hash join when the ON predicate contains
+        equi-column conditions; falls back to nested-loop theta join otherwise.
+        """
+        right_rel = QueryExecutor._resolve_source(join_clause.with_source, store)
         join_type = join_clause.type
+        on_pred = join_clause.on
 
-        if join_type == "inner":
-            return relation.join(with_rel, on=on_col)
-        if join_type == "left":
-            return relation.join_left(with_rel, on=on_col)
-        if join_type == "right":
-            return with_rel.join_left(relation, on=on_col)
-        if join_type == "full":
-            return relation.join_full(with_rel, on=on_col)
-        raise ValueError(f"Unknown join type: {join_type}")
+        # 1. Extract equi pairs for hash join optimization
+        equi_pairs = QueryExecutor._extract_equi_pairs(on_pred)
+
+        if equi_pairs:
+            return QueryExecutor._apply_hash_join(
+                relation, right_rel, join_type, equi_pairs, on_pred, store,
+            )
+
+        # 2. No equi conditions — theta join (nested-loop)
+        return QueryExecutor._apply_theta_join(
+            relation, right_rel, join_type, on_pred, store,
+        )
 
     @staticmethod
-    def _extract_join_column(pred: Predicate) -> str | None:
-        """Extract the column name from a binary eq predicate used in a join on clause."""
-        if isinstance(pred, BinaryPred) and pred.op == "eq":
-            return pred.left.column
-        if isinstance(pred, CompoundPred):
+    def _apply_hash_join(
+        relation: Relation,
+        right_rel: Relation,
+        join_type: str,
+        equi_pairs: list[tuple[str, str]],
+        on_pred: Predicate,
+        store: ResultStore,
+    ) -> Relation:
+        """Equi-join via hash index (inner / left / right / full).
+
+        When equi column names differ between left and right, the right
+        relation is temporarily renamed before the hash join.
+        """
+        left_cols = tuple(p[0] for p in equi_pairs)
+        right_cols = tuple(p[1] for p in equi_pairs)
+
+        # Determine the ON key (str for single, tuple for composite)
+        def _on_key(cols: tuple[str, ...]) -> str | tuple[str, ...]:
+            return cols[0] if len(cols) == 1 else cols
+
+        if join_type == "right":
+            # Right join: swap left/right, do a left join
+            if right_cols != left_cols:
+                relation = relation.rename(dict(zip(left_cols, right_cols)))
+            result = right_rel.join_left(relation, on=_on_key(right_cols))
+        else:
+            if left_cols == right_cols:
+                on_key = _on_key(left_cols)
+            else:
+                rename_map = dict(zip(right_cols, left_cols))
+                right_rel = right_rel.rename(rename_map)
+                on_key = _on_key(left_cols)
+
+            if join_type == "inner":
+                result = relation.join(right_rel, on=on_key)
+            elif join_type == "left":
+                result = relation.join_left(right_rel, on=on_key)
+            elif join_type == "full":
+                result = relation.join_full(right_rel, on=on_key)
+            else:
+                raise ValueError(f"Unknown join type: {join_type}")
+
+        # 3. Apply remaining non-equi predicates on the join result
+        remaining = QueryExecutor._remove_equi_from_pred(on_pred, equi_pairs)
+        if remaining is not None:
+            compiled = QueryExecutor._compile_predicate(
+                remaining, result.columns, graph=store.graph, store=store,
+            )
+            if compiled is not None:
+                result = result.select(compiled)
+            else:
+                def _pred_fn(row, _p=remaining, _cols=result.columns):
+                    return QueryExecutor._eval_predicate(
+                        _p, row, _cols, graph=store.graph, store=store,
+                    )
+                result = result.select(_pred_fn)
+
+        return result
+
+    @staticmethod
+    def _apply_theta_join(
+        relation: Relation,
+        right_rel: Relation,
+        join_type: str,
+        on_pred: Predicate,
+        store: ResultStore,
+    ) -> Relation:
+        """Non-equi join via nested-loop theta join.
+
+        Evaluates the predicate against each (left, right) row pair by
+        constructing a combined row object that resolves columns from both
+        relations.
+        """
+        def _theta_fn(l_row, r_row):
+            combined_cols = relation.columns + right_rel.columns
+
+            class _CombinedRow:
+                """Adapter: resolves getattr from either left or right row."""
+
+                def __getattr__(self, name):
+                    if name in relation.columns:
+                        idx = relation.columns.index(name)
+                        if isinstance(l_row, tuple):
+                            return l_row[idx]
+                        return getattr(l_row, name)
+                    if name in right_rel.columns:
+                        idx = right_rel.columns.index(name)
+                        if isinstance(r_row, tuple):
+                            return r_row[idx]
+                        return getattr(r_row, name)
+                    raise AttributeError(name)
+
+            return QueryExecutor._eval_predicate(
+                on_pred, _CombinedRow(), combined_cols,
+                graph=store.graph, store=store,
+            )
+
+        return relation.join_theta(right_rel, _theta_fn, how=join_type)
+
+    # ── Equi-pair extraction ────────────────────────────────────
+
+    @staticmethod
+    def _extract_equi_pairs(pred: Predicate) -> list[tuple[str, str]]:
+        """Extract all equi-column pairs ``(left_col, right_col)`` from a predicate.
+
+        Only collects within AND trees.  Returns [] for OR / NOT (conservative).
+        Both sides must be ``ColumnRef`` for a pair to qualify.
+        """
+        if isinstance(pred, CompoundPred) and pred.op == "and":
+            pairs: list[tuple[str, str]] = []
             for op in pred.operands:
-                result = QueryExecutor._extract_join_column(op)
+                pairs.extend(QueryExecutor._extract_equi_pairs(op))
+            return pairs
+        if isinstance(pred, BinaryPred) and pred.op == "eq":
+            if isinstance(pred.left, ColumnRef) and isinstance(pred.right, ColumnRef):
+                return [(pred.left.column, pred.right.column)]
+            return []
+        if isinstance(pred, CompoundPred) and pred.op in ("or", "not"):
+            return []
+        return []
+
+    @staticmethod
+    def _remove_equi_from_pred(
+        pred: Predicate,
+        equi_pairs: list[tuple[str, str]],
+    ) -> Predicate | None:
+        """Remove already-extracted equi conditions, returning the remainder.
+
+        Returns ``None`` when the predicate has been fully consumed.
+        """
+        if isinstance(pred, CompoundPred) and pred.op == "and":
+            remaining: list[Predicate] = []
+            for op in pred.operands:
+                result = QueryExecutor._remove_equi_from_pred(op, equi_pairs)
                 if result is not None:
-                    return result
-        return None
+                    remaining.append(result)
+            if len(remaining) > 1:
+                return CompoundPred("and", remaining)
+            if len(remaining) == 1:
+                return remaining[0]
+            return None
+        if (
+            isinstance(pred, BinaryPred)
+            and pred.op == "eq"
+            and isinstance(pred.left, ColumnRef)
+            and isinstance(pred.right, ColumnRef)
+            and (pred.left.column, pred.right.column) in equi_pairs
+        ):
+            return None
+        return pred
 
     @staticmethod
     def _apply_group_by(relation: Relation, group_clause, store=None) -> Relation:
@@ -443,6 +584,87 @@ class QueryExecutor:
                     )
                     != _v
                 )
+            if op in ("gt", "gte", "lt", "lte"):
+                def _cmp_fn(row, _idx=col_idx, _v=val, _op=op, _col=pred.left.column):
+                    x = row[_idx] if isinstance(row, tuple) else getattr(row, _col)
+                    if x is None or _v is None:
+                        return False
+                    if _op == "gt":
+                        return x > _v
+                    if _op == "gte":
+                        return x >= _v
+                    if _op == "lt":
+                        return x < _v
+                    if _op == "lte":
+                        return x <= _v
+                    return False
+
+                return _cmp_fn
+
+        # StringPred compilation
+        if isinstance(pred, StringPred):
+            col_name = pred.column.column
+            if col_name not in columns:
+                return None
+            col_idx = columns.index(col_name)
+            pattern = pred.pattern
+            _str_op = pred.op
+
+            def _get_str(row, _idx=col_idx, _c=col_name):
+                val = row[_idx] if isinstance(row, tuple) else getattr(row, _c)
+                return None if val is None else str(val)
+
+            if _str_op == "ends_with":
+                return lambda row, _idx=col_idx, _p=pattern, _fn=_get_str: (
+                    False if _fn(row) is None else _fn(row).endswith(_p)
+                )
+            if _str_op == "starts_with":
+                return lambda row, _idx=col_idx, _p=pattern, _fn=_get_str: (
+                    False if _fn(row) is None else _fn(row).startswith(_p)
+                )
+            if _str_op == "contains":
+                return lambda row, _idx=col_idx, _p=pattern, _fn=_get_str: (
+                    False if _fn(row) is None else _p in _fn(row)
+                )
+            if _str_op == "not_contains":
+                return lambda row, _idx=col_idx, _p=pattern, _fn=_get_str: (
+                    False if _fn(row) is None else _p not in _fn(row)
+                )
+
+        # LikePred compilation
+        if isinstance(pred, LikePred):
+            col_name = pred.column.column
+            if col_name not in columns:
+                return None
+            col_idx = columns.index(col_name)
+            pattern = pred.pattern
+            return lambda row, _idx=col_idx, _p=pattern: (
+                False
+                if (row[_idx] if isinstance(row, tuple) else getattr(row, col_name)) is None
+                else fnmatch.fnmatch(
+                    str(
+                        row[_idx] if isinstance(row, tuple) else getattr(row, col_name)
+                    ),
+                    _p,
+                )
+            )
+
+        # InPred compilation
+        if isinstance(pred, InPred):
+            col_name = pred.column.column
+            if col_name not in columns:
+                return None
+            col_idx = columns.index(col_name)
+            values = {lit.value for lit in pred.values}
+            negated = pred.negated
+            if negated:
+                return lambda row, _idx=col_idx, _v=values, _c=col_name: (
+                    row[_idx] if isinstance(row, tuple) else getattr(row, _c)
+                ) not in _v
+            return lambda row, _idx=col_idx, _v=values, _c=col_name: (
+                row[_idx] if isinstance(row, tuple) else getattr(row, _c)
+            ) in _v
+
         # Fallback: return None (caller uses interpreter)
         return None
 

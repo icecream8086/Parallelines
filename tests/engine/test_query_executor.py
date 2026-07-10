@@ -674,10 +674,10 @@ class TestNullSemantics:
         s.right = Relation("right", ("k", "v2"), [(None, "x"), (1, "y")])
         q = Query(
             [ColumnRef("v")], Source(relation="left"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "inner", Source(relation="right"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         # Spec: NULL != NULL -> no match for None pair; (1, 1) still matches
@@ -873,10 +873,10 @@ class TestJoin:
         s.b = Relation("b", ("k", "v2"), [("y", 2)])
         q = Query(
             [ColumnRef("v")], Source(relation="a"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "inner", Source(relation="b"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         assert len(r) == 0
@@ -902,10 +902,10 @@ class TestJoin:
         q = Query(
             [ColumnRef("v"), ColumnRef("v2")],
             Source(relation="left"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "left", Source(relation="right"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         assert len(r) == 2  # all left rows
@@ -931,7 +931,7 @@ class TestJoin:
         q = Query(
             [ColumnRef("virtual_path", "files")],
             Source(relation="files"),
-            join=JoinClause(
+            joins=[JoinClause(
                 type="full",
                 with_source=Source(relation="external_files"),
                 on=BinaryPred(
@@ -939,7 +939,7 @@ class TestJoin:
                     ColumnRef("virtual_path", "files"),
                     ColumnRef("virtual_path", "external_files"),
                 ),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, store)
         # all unique paths from both sides
@@ -950,7 +950,7 @@ class TestJoin:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
+            joins=[JoinClause(
                 type="full",
                 with_source=Source(relation="external_files"),
                 on=BinaryPred(
@@ -958,7 +958,7 @@ class TestJoin:
                     ColumnRef("virtual_path", "files"),
                     ColumnRef("virtual_path", "external_files"),
                 ),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, store)
         assert len(r) == 7
@@ -970,10 +970,10 @@ class TestJoin:
         s.right = Relation("right", ("k", "v2"), [(1, "y")])
         q = Query(
             [Lit("*")], Source(relation="left"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "left", Source(relation="right"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         assert len(r) == 0
@@ -985,10 +985,10 @@ class TestJoin:
         s.right = Relation("right", ("k", "v2"), [])
         q = Query(
             [ColumnRef("v")], Source(relation="left"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "left", Source(relation="right"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         # LEFT JOIN with empty right: all left rows returned, right cols NULL
@@ -1001,10 +1001,10 @@ class TestJoin:
         s.right = Relation("right", ("k", "v2"), [(None, "x"), (1, "y")])
         q = Query(
             [ColumnRef("v")], Source(relation="left"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "inner", Source(relation="right"),
                 BinaryPred("eq", ColumnRef("k"), ColumnRef("k")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         # SQL NULL semantics: None keys do not match
@@ -1187,10 +1187,10 @@ class TestStageOrder:
         q = Query(
             [Lit("*")],
             Source(relation="files"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "inner", Source(relation="ext"),
                 BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
-            ),
+            )],
         )
         r = QueryExecutor.execute(q, s)
         assert len(r) == 2  # both files matched
@@ -1209,10 +1209,10 @@ class TestStageOrder:
         q = Query(
             [Lit("*")],
             Source(relation="files"),
-            join=JoinClause(
+            joins=[JoinClause(
                 "inner", Source(relation="ext"),
                 BinaryPred("eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")),
-            ),
+            )],
             where=BinaryPred("eq", ColumnRef("category"), Lit("docs")),
         )
         r = QueryExecutor.execute(q, s)
@@ -1239,24 +1239,33 @@ class TestCompilePredicate:
         assert fn(("val",)) is False
         assert fn(("other",)) is True
 
-    def test_compile_gt_returns_none(self):
-        """CMP-03: compile gt/gte/lt/lte returns None."""
+    def test_compile_gt_returns_callable(self):
+        """CMP-03: compile gt/gte/lt/lte now returns callable (not None)."""
+        expects_true = {"gt": (2,), "gte": (2,), "lt": (0,), "lte": (0,)}
         for op in ("gt", "gte", "lt", "lte"):
             pred = BinaryPred(op, ColumnRef("col"), Lit(1))
             fn = QueryExecutor._compile_predicate(pred, ("col",))
-            assert fn is None, f"{op} should return None"
+            assert fn is not None, f"{op} should return callable"
+            true_arg = expects_true[op]
+            false_arg = (0,) if true_arg == (2,) else (2,)
+            assert fn(true_arg) is True, f"{op} fn({true_arg}) should be True"
+            assert fn(false_arg) is False
+            # NULL handling: None column → False
+            assert fn((None,)) is False
 
-    def test_compile_like_returns_none(self):
-        """CMP-04: compile LikePred returns None."""
+    def test_compile_like_returns_callable(self):
+        """CMP-04: compile LikePred now returns callable (not None)."""
         pred = LikePred(ColumnRef("col"), "*.txt")
         fn = QueryExecutor._compile_predicate(pred, ("col",))
-        assert fn is None
+        assert fn is not None
 
-    def test_compile_in_returns_none(self):
-        """CMP-05: compile InPred returns None."""
+    def test_compile_in_returns_callable(self):
+        """CMP-05: compile InPred now returns callable (not None)."""
         pred = InPred(ColumnRef("col"), [Lit("a"), Lit("b")])
         fn = QueryExecutor._compile_predicate(pred, ("col",))
-        assert fn is None
+        assert fn is not None
+        assert fn(("a",)) is True
+        assert fn(("c",)) is False
 
     def test_compile_compound_returns_none(self):
         """CMP-06: compile CompoundPred returns None."""
@@ -1267,11 +1276,13 @@ class TestCompilePredicate:
         fn = QueryExecutor._compile_predicate(pred, ("col", "col2"))
         assert fn is None
 
-    def test_compile_string_returns_none(self):
-        """CMP-07: compile StringPred returns None."""
+    def test_compile_string_returns_callable(self):
+        """CMP-07: compile StringPred now returns callable (not None)."""
         pred = StringPred("starts_with", ColumnRef("col"), "pre")
         fn = QueryExecutor._compile_predicate(pred, ("col",))
-        assert fn is None
+        assert fn is not None
+        assert fn(("prefix",)) is True
+        assert fn(("other",)) is False
 
     def test_compile_graph_returns_none(self):
         """CMP-08: compile GraphPred returns None."""

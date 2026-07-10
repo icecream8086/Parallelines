@@ -122,13 +122,15 @@ class TestValidatorR1:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert errors == [] or all("R1" not in e for e in errors)
@@ -203,15 +205,17 @@ class TestValidatorR3:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq",
-                    ColumnRef("ghost_col", relation="hash_conflicts"),
-                    ColumnRef("virtual_path"),
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq",
+                        ColumnRef("ghost_col", relation="hash_conflicts"),
+                        ColumnRef("virtual_path"),
+                    ),
                 ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert any("R3" in e for e in errors)
@@ -256,18 +260,20 @@ class TestValidatorR5:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="inner",
-                with_source=Source(
-                    subquery=Query(
-                        [ColumnRef("virtual_path")],
-                        Source(relation="ghost_relation"),
+            joins=[
+                JoinClause(
+                    type="inner",
+                    with_source=Source(
+                        subquery=Query(
+                            [ColumnRef("virtual_path")],
+                            Source(relation="ghost_relation"),
+                        ),
+                    ),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
                     ),
                 ),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
-                ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert any("R5" in e for e in errors)
@@ -284,13 +290,15 @@ class TestValidatorR6:
         q = Query(
             [ColumnRef("virtual_path")],
             Source(relation="files"),
-            join=JoinClause(
-                type="full",
-                with_source=Source(relation="hash_conflicts"),
-                on=BinaryPred(
-                    "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+            joins=[
+                JoinClause(
+                    type="full",
+                    with_source=Source(relation="hash_conflicts"),
+                    on=BinaryPred(
+                        "eq", ColumnRef("virtual_path"), ColumnRef("virtual_path")
+                    ),
                 ),
-            ),
+            ],
         )
         errors = QueryValidator.validate(q, store)
         assert any("R6" in e for e in errors)

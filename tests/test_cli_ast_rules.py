@@ -268,9 +268,8 @@ def test_r01_mode_help(mock_main_deps) -> None:
     mock_main_deps["ReplSession"].assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="BUG R02: no WARNING when --analyze and --external both given")
 def test_r02_analyze_wins_over_external(mock_main_deps, caplog) -> None:
-    """R02 (BUG): --analyze + --external → --analyze wins, but no WARNING printed."""
+    """R02: --analyze + --external → --analyze wins and WARNING is printed."""
     caplog.set_level(logging.WARNING)
     result = _main(["--game", "l4d2", "--analyze", "--external", "test.vpk"])
     assert result == 0
@@ -283,9 +282,8 @@ def test_r02_analyze_wins_over_external(mock_main_deps, caplog) -> None:
     ), "Expected a WARNING about --analyze and --external conflict"
 
 
-@pytest.mark.xfail(strict=True, reason="BUG R03: no WARNING when --analyze and --repl both given")
 def test_r03_analyze_wins_over_repl(mock_main_deps, caplog) -> None:
-    """R03 (BUG): --analyze + --repl → --analyze wins, but no WARNING printed."""
+    """R03: --analyze + --repl → --analyze wins and WARNING is printed."""
     caplog.set_level(logging.WARNING)
     result = _main(["--game", "l4d2", "--analyze", "--repl"])
     assert result == 0
@@ -297,9 +295,8 @@ def test_r03_analyze_wins_over_repl(mock_main_deps, caplog) -> None:
     ), "Expected a WARNING about --analyze and --repl conflict"
 
 
-@pytest.mark.xfail(strict=True, reason="BUG R04: no WARNING when --external and --repl both given")
 def test_r04_external_wins_over_repl(mock_main_deps, caplog) -> None:
-    """R04 (BUG): --external + --repl → --external wins, but no WARNING printed."""
+    """R04: --external + --repl → --external wins and WARNING is printed."""
     caplog.set_level(logging.WARNING)
     result = _main(["--game", "l4d2", "--external", "test.vpk", "--repl"])
     assert result == 0
@@ -658,13 +655,8 @@ def test_r20_ref_query_outside_external(mock_main_deps, caplog) -> None:
 # ===================================================================
 
 
-@pytest.mark.xfail(strict=True, reason="BUG R21: --sv-pure has no effect in REPL mode")
 def test_r21_repl_sv_pure_ignored(mock_main_deps, caplog) -> None:
-    """R21 (CRITICAL BUG): --repl --sv-pure → whitelist NOT applied.
-
-    The sv-pure filtering only runs inside cmd_analyze() (cli.py lines 807-828).
-    REPL mode dispatches to ReplSession which never enters cmd_analyze.
-    """
+    """R21: --repl --sv-pure → whitelist is applied (moved to _build_store in B032)."""
     caplog.set_level(logging.WARNING)
     _main(["--game", "l4d2", "--repl", "--sv-pure", "/path/to/whitelist.txt"])
     mock_main_deps["ReplSession"].assert_called_once()

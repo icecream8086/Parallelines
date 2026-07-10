@@ -54,9 +54,16 @@ class QueryParser:
             if "where" in d:
                 where = QueryParser._parse_predicate(d["where"])
 
-            join: JoinClause | None = None
-            if "join" in d:
-                join = QueryParser._parse_join(d["join"])
+            # ── joins (supports both old "join" and new "joins") ──
+            joins: list[JoinClause] = []
+            has_join = "join" in d
+            has_joins = "joins" in d
+            if has_join and has_joins:
+                raise QueryParseError("Cannot use both 'join' and 'joins' in the same query")
+            if has_join:
+                joins.append(QueryParser._parse_join(d["join"]))
+            if has_joins:
+                joins.extend(QueryParser._parse_join(j) for j in d["joins"])
 
             group_by: GroupByClause | None = None
             if "group_by" in d:
@@ -80,7 +87,7 @@ class QueryParser:
                 select=select,
                 source=source,
                 where=where,
-                join=join,
+                joins=joins,
                 group_by=group_by,
                 having=having,
                 order_by=order_by,

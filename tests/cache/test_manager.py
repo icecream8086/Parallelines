@@ -68,7 +68,7 @@ class TestCacheManager(unittest.TestCase):
             },
         }
 
-        self.manager.save(files_df, edges_df, meta)
+        self.manager.save(files_df, meta, edges_df)
 
         loaded_files = self.manager.load_files()
         self.assertIsNotNone(loaded_files)
@@ -105,7 +105,7 @@ class TestCacheManager(unittest.TestCase):
             },
         }
 
-        self.manager.save(files_df, edges_df, meta)
+        self.manager.save(files_df, meta, edges_df)
         self.assertTrue(self.manager.is_valid(vpk_list))
 
         # Changing mtime should invalidate
@@ -130,7 +130,7 @@ class TestCacheManager(unittest.TestCase):
             }
         )
         edges_df = pd.DataFrame({"from": [], "to": []})
-        self.manager.save(files_df, edges_df, {"version": "1.0", "entries": {}})
+        self.manager.save(files_df, {"version": "1.0", "entries": {}}, edges_df)
 
         # Verify cache files exist
         self.assertTrue((self.tmp_dir / "meta.json").exists())

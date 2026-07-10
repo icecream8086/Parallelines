@@ -282,8 +282,8 @@ class TestParserClauses:
                 "on": {"eq": [["f", "a"], ["f2", "b"]]},
             },
         })
-        assert q.join is not None
-        assert q.join.type == "inner"
+        assert len(q.joins) == 1
+        assert q.joins[0].type == "inner"
 
     def test_group_by(self):
         """PAR-29: GROUP BY clause."""

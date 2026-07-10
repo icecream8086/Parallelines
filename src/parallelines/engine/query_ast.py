@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal as _Literal
 
 
@@ -138,7 +138,7 @@ class Query:
     select: list[ColumnRef | Literal]
     source: Source
     where: Predicate | None = None
-    join: JoinClause | None = None
+    joins: list[JoinClause] = field(default_factory=list)
     group_by: GroupByClause | None = None
     having: Predicate | None = None
     order_by: OrderByClause | None = None

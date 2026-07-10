@@ -53,7 +53,7 @@ class Relation(Generic[T]):
         self.columns = columns
         self.rows: list[T] = rows or []
         self._row_type: type | None = row_type
-        self._index: dict[str, dict] = {}  # col_name -> {value: [row_indices]}
+        self._index: dict[str | tuple[str, ...], dict] = {}  # col_name -> {value: [row_indices]}
 
     @classmethod
     def from_rows(cls, name: str, rows: list[T]) -> "Relation[T]":
@@ -66,6 +66,7 @@ class Relation(Generic[T]):
 
     def build_index(self, *col_names: str) -> None:
         """为指定列建立 hash index。多次调用追加索引。"""
+        # 1. 为每列单独建索引（保持现有行为）
         for col in col_names:
             if col not in self.columns:
                 raise KeyError(f"Column '{col}' not in {self.name}.columns")
@@ -79,12 +80,32 @@ class Relation(Generic[T]):
                     val = getattr(row, col)
                 idx[val].append(i)
             self._index[col] = dict(idx)
+        # 2. 多列时额外构建复合索引
+        if len(col_names) > 1:
+            composite_key = tuple(col_names)
+            col_indices = [self.columns.index(c) for c in col_names]
+            idx: dict = defaultdict(list)
+            for i, row in enumerate(self.rows):
+                vals = tuple(
+                    row[ci] if isinstance(row, tuple) else getattr(row, c)
+                    for ci, c in zip(col_indices, col_names)
+                )
+                # NULL 语义：元组中任一值为 None 则跳过（与 SQL 的 NULL != NULL 一致）
+                if any(v is None for v in vals):
+                    continue
+                idx[vals].append(i)
+            self._index[composite_key] = dict(idx)
 
-    def lookup(self, col: str, value) -> list[T]:
+    def lookup(self, col: str | tuple[str, ...], value) -> list[T]:
         """通过 hash index 等值查找（需先 build_index）。"""
         if col not in self._index:
+            if isinstance(col, str):
+                raise KeyError(
+                    f"Column '{col}' not indexed. Call build_index('{col}') first."
+                )
+            cols_repr = ", ".join(repr(c) for c in col)
             raise KeyError(
-                f"Column '{col}' not indexed. Call build_index('{col}') first."
+                f"Composite index {col} not built. Call build_index({cols_repr}) first."
             )
         indices = self._index[col].get(value, [])
         return [self.rows[i] for i in indices]
@@ -134,34 +155,57 @@ class Relation(Generic[T]):
                 result_rows.append(vals)
         return Relation(name=self.name, columns=attrs, rows=result_rows)
 
-    def join(self, other: "Relation", on: str) -> "Relation":
+    def join(self, other: "Relation", on: str | tuple[str, ...]) -> "Relation":
         """在公共列 *on* 上执行内连接。结果行为 tuple。"""
-        if on not in self.columns or on not in other.columns:
-            raise ValueError(f"Join column '{on}' not found in both relations")
-        other.build_index(on)
-        self_on_idx = self.columns.index(on)
-        other_cols_without_on = tuple(c for c in other.columns if c != on)
+        if isinstance(on, str):
+            # 单列路径（保持原有行为不变）
+            on_cols = (on,)
+        else:
+            on_cols = on
+
+        for c in on_cols:
+            if c not in self.columns or c not in other.columns:
+                raise ValueError(f"Join column '{c}' not found in both relations")
+
+        other.build_index(*on_cols)
+        self_on_indices = [self.columns.index(c) for c in on_cols]
+        other_cols_without_on = tuple(c for c in other.columns if c not in on_cols)
         result_columns = self.columns + other_cols_without_on
         result_rows: list[tuple] = []
         for self_row in self.rows:
-            self_val: object
-            if isinstance(self_row, tuple):
-                self_val = self_row[self_on_idx]
+            if isinstance(on, str):
+                # 单列：标量值路径
+                self_val: object
+                if isinstance(self_row, tuple):
+                    self_val = self_row[self_on_indices[0]]
+                else:
+                    self_val = getattr(self_row, on)
+
+                # Guard: None keys never match SQL NULL semantics
+                if self_val is None:
+                    continue
+
+                matches = other.lookup(on, self_val)
             else:
-                self_val = getattr(self_row, on)
+                # 复合键：元组值路径
+                if isinstance(self_row, tuple):
+                    self_vals = tuple(self_row[i] for i in self_on_indices)
+                else:
+                    self_vals = tuple(getattr(self_row, c) for c in on_cols)
 
-            # Guard: None keys never match SQL NULL semantics (no match ≠ NULL).
-            if self_val is None:
-                continue
+                # NULL 语义：元组中任一值为 None 则跳过
+                if any(v is None for v in self_vals):
+                    continue
 
-            matches = other.lookup(on, self_val)
+                matches = other.lookup(on_cols, self_vals)
+
             for other_row in matches:
                 other_vals = tuple(
                     other_row[i]
                     if isinstance(other_row, tuple)
                     else getattr(other_row, c)
                     for i, c in enumerate(other.columns)
-                    if c != on
+                    if c not in on_cols
                 )
                 if isinstance(self_row, tuple):
                     result_rows.append(self_row + other_vals)
@@ -174,27 +218,48 @@ class Relation(Generic[T]):
             rows=result_rows,
         )
 
-    def join_left(self, other: Relation, on: str) -> Relation:
+    def join_left(self, other: Relation, on: str | tuple[str, ...]) -> Relation:
         """左外连接。self 的所有行保留，other 无匹配时填充 None。"""
-        if on not in self.columns or on not in other.columns:
-            raise ValueError(f"Join column '{on}' not found in both relations")
+        if isinstance(on, str):
+            on_cols = (on,)
+        else:
+            on_cols = on
 
-        other.build_index(on)
-        self_on_idx = self.columns.index(on)
-        other_cols_without_on = tuple(c for c in other.columns if c != on)
+        for c in on_cols:
+            if c not in self.columns or c not in other.columns:
+                raise ValueError(f"Join column '{c}' not found in both relations")
+
+        other.build_index(*on_cols)
+        self_on_indices = [self.columns.index(c) for c in on_cols]
+        other_cols_without_on = tuple(c for c in other.columns if c not in on_cols)
         result_columns = self.columns + other_cols_without_on
         result_rows: list[tuple] = []
         null_other = tuple([None] * len(other_cols_without_on))
 
         for self_row in self.rows:
-            self_val: object
-            if isinstance(self_row, tuple):
-                self_val = self_row[self_on_idx]
-            else:
-                self_val = getattr(self_row, on)
+            if isinstance(on, str):
+                # 单列：标量值路径
+                self_val: object
+                if isinstance(self_row, tuple):
+                    self_val = self_row[self_on_indices[0]]
+                else:
+                    self_val = getattr(self_row, on)
 
-            # Guard: None keys never match SQL NULL semantics (no match ≠ NULL).
-            matches = other.lookup(on, self_val) if self_val is not None else []
+                # Guard: None keys never match SQL NULL semantics
+                matches = other.lookup(on, self_val) if self_val is not None else []
+            else:
+                # 复合键：元组值路径
+                if isinstance(self_row, tuple):
+                    self_vals = tuple(self_row[i] for i in self_on_indices)
+                else:
+                    self_vals = tuple(getattr(self_row, c) for c in on_cols)
+
+                # NULL 语义：元组中任一值为 None 则跳过
+                matches = (
+                    other.lookup(on_cols, self_vals)
+                    if not any(v is None for v in self_vals)
+                    else []
+                )
 
             if not matches:
                 if isinstance(self_row, tuple):
@@ -209,7 +274,7 @@ class Relation(Generic[T]):
                         if isinstance(other_row, tuple)
                         else getattr(other_row, c)
                         for i, c in enumerate(other.columns)
-                        if c != on
+                        if c not in on_cols
                     )
                     if isinstance(self_row, tuple):
                         result_rows.append(self_row + other_vals)
@@ -223,46 +288,75 @@ class Relation(Generic[T]):
             rows=result_rows,
         )
 
-    def join_right(self, other: Relation, on: str) -> Relation:
+    def join_right(self, other: Relation, on: str | tuple[str, ...]) -> Relation:
         """右外连接。等价于 other.join_left(self, on)。"""
         return other.join_left(self, on)
 
-    def join_full(self, other: Relation, on: str) -> Relation:
+    def join_full(self, other: Relation, on: str | tuple[str, ...]) -> Relation:
         """全外连接。left ∪ right，按行去重。"""
-        if on not in self.columns or on not in other.columns:
-            raise ValueError(f"Join column '{on}' not found in both relations")
+        if isinstance(on, str):
+            on_cols = (on,)
+        else:
+            on_cols = on
+
+        for c in on_cols:
+            if c not in self.columns or c not in other.columns:
+                raise ValueError(f"Join column '{c}' not found in both relations")
 
         left = self.join_left(other, on)
         right = other.join_left(self, on)
 
-        self_on_idx = self.columns.index(on)
-        other_on_idx = other.columns.index(on)
+        self_on_indices = [self.columns.index(c) for c in on_cols]
+        other_on_indices = [other.columns.index(c) for c in on_cols]
 
         # Track on values that exist in self (None excluded — NULL != NULL)
         self_on_values: set = set()
         for row in self.rows:
-            v = row[self_on_idx] if isinstance(row, tuple) else getattr(row, on)
-            if v is not None:
-                self_on_values.add(v)
+            if isinstance(on, str):
+                v = row[self_on_indices[0]] if isinstance(row, tuple) else getattr(row, on)
+                if v is not None:
+                    self_on_values.add(v)
+            else:
+                vals = tuple(
+                    row[i] if isinstance(row, tuple) else getattr(row, c)
+                    for i, c in zip(self_on_indices, on_cols)
+                )
+                if not any(x is None for x in vals):
+                    self_on_values.add(vals)
 
         merged: list[tuple] = list(left.rows)
 
         for row in right.rows:
-            on_val = row[other_on_idx] if isinstance(row, tuple) else getattr(row, on)
+            if isinstance(on, str):
+                on_val = row[other_on_indices[0]] if isinstance(row, tuple) else getattr(row, on)
+            else:
+                on_val = tuple(
+                    row[i] if isinstance(row, tuple) else getattr(row, c)
+                    for i, c in zip(other_on_indices, on_cols)
+                )
+
             if on_val not in self_on_values:
                 # Unmatched other row — convert to left's column order
                 if isinstance(row, tuple):
                     self_part: list = [None] * len(self.columns)
-                    self_part[self_on_idx] = on_val
+                    if isinstance(on, str):
+                        self_part[self_on_indices[0]] = on_val
+                    else:
+                        for idx, val in zip(self_on_indices, on_val):
+                            self_part[idx] = val
                     other_part = tuple(
-                        row[i] for i, c in enumerate(other.columns) if c != on
+                        row[i] for i, c in enumerate(other.columns) if c not in on_cols
                     )
                     merged.append(tuple(self_part) + other_part)
                 else:
                     self_vals: list = [None] * len(self.columns)
-                    self_vals[self_on_idx] = on_val
+                    if isinstance(on, str):
+                        self_vals[self_on_indices[0]] = on_val
+                    else:
+                        for idx, val in zip(self_on_indices, on_val):
+                            self_vals[idx] = val
                     other_vals = tuple(
-                        getattr(row, c) for c in other.columns if c != on
+                        getattr(row, c) for c in other.columns if c not in on_cols
                     )
                     merged.append(tuple(self_vals) + other_vals)
 
@@ -270,6 +364,104 @@ class Relation(Generic[T]):
             name=f"{self.name}*{other.name}",
             columns=left.columns,
             rows=merged,
+        )
+
+    def rename(self, mapping: dict[str, str]) -> "Relation":
+        """返回新 Relation，将 mapping 中的列名从 key 改为 value。
+        不影响原 Relation。结果行为 tuple。"""
+        new_columns = tuple(mapping.get(c, c) for c in self.columns)
+        return Relation(name=self.name, columns=new_columns, rows=[
+            tuple(
+                row[i] if isinstance(row, tuple) else getattr(row, c)
+                for i, c in enumerate(self.columns)
+            )
+            for row in self.rows
+        ])
+
+    def join_theta(
+        self,
+        other: "Relation",
+        predicate: Callable[[T, object], bool],
+        how: str = "inner",
+    ) -> "Relation":
+        """嵌套循环 θ-连接。
+
+        Args:
+            other: 右表
+            predicate: (left_row, right_row) → bool
+            how: "inner" | "left" | "right" | "full"
+
+        Returns:
+            新 Relation，包含两表所有列。
+            右表中与左表同名的列 → 加后缀 _right。
+        """
+        if how not in ("inner", "left", "right", "full"):
+            raise ValueError(
+                f"Invalid how='{how}'. Must be 'inner', 'left', 'right', or 'full'."
+            )
+
+        # 列名冲突规则：右表中与左表同名的列 → 加后缀 _right
+        right_columns = tuple(
+            c if c not in self.columns else f"{c}_right"
+            for c in other.columns
+        )
+        result_columns = self.columns + right_columns
+
+        # Nested Loop θ-join
+        result_rows: list[tuple] = []
+        matched_left: set[int] = set()
+        matched_right: set[int] = set()
+
+        for i, self_row in enumerate(self.rows):
+            self_vals = tuple(
+                self_row[j] if isinstance(self_row, tuple) else getattr(self_row, c)
+                for j, c in enumerate(self.columns)
+            )
+            for j, other_row in enumerate(other.rows):
+                if predicate(self_row, other_row):
+                    other_vals = tuple(
+                        other_row[k]
+                        if isinstance(other_row, tuple)
+                        else getattr(other_row, c)
+                        for k, c in enumerate(other.columns)
+                    )
+                    result_rows.append(self_vals + other_vals)
+                    matched_left.add(i)
+                    matched_right.add(j)
+
+        if how in ("left", "full"):
+            for i, self_row in enumerate(self.rows):
+                if i not in matched_left:
+                    self_vals = tuple(
+                        self_row[j]
+                        if isinstance(self_row, tuple)
+                        else getattr(self_row, c)
+                        for j, c in enumerate(self.columns)
+                    )
+                    result_rows.append(
+                        self_vals + tuple([None] * len(right_columns))
+                    )
+
+        if how == "right":
+            return other.join_theta(self, predicate, how="left")
+
+        if how == "full":
+            for j, other_row in enumerate(other.rows):
+                if j not in matched_right:
+                    other_vals = tuple(
+                        other_row[k]
+                        if isinstance(other_row, tuple)
+                        else getattr(other_row, c)
+                        for k, c in enumerate(other.columns)
+                    )
+                    result_rows.append(
+                        tuple([None] * len(self.columns)) + other_vals
+                    )
+
+        return Relation(
+            name=f"{self.name}⨝{other.name}",
+            columns=result_columns,
+            rows=result_rows,
         )
 
     def group_by(
@@ -300,6 +492,19 @@ class Relation(Generic[T]):
             columns=result_columns,
             rows=result_rows,
         )
+
+    def distinct_count(self, col: str) -> int:
+        """返回指定列的唯一值数量（NDV）。基于已有索引或全表扫描。"""
+        if col not in self.columns:
+            raise KeyError(f"Column '{col}' not in {self.name}.columns")
+        if col in self._index:
+            return len(self._index[col])
+        col_idx = self.columns.index(col)
+        seen: set = set()
+        for row in self.rows:
+            val = row[col_idx] if isinstance(row, tuple) else getattr(row, col)
+            seen.add(val)
+        return len(seen)
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -564,9 +769,11 @@ class ResultStore:
             QueryValidator,
         )
         from parallelines.engine.query_executor import QueryExecutor
+        from parallelines.engine.query_optimizer import QueryOptimizer
 
         ast = QueryParser.parse(query_json)
         errors = QueryValidator.validate(ast, self)
         if errors:
             raise QueryValidationError(errors)
+        ast = QueryOptimizer.optimize(ast, self)
         return QueryExecutor.execute(ast, self)

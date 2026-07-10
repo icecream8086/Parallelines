@@ -1,0 +1,28 @@
+{
+  "_comment": "Addon 全景档案 — v2 多表 JOIN: files ⋈ addons ⋈ external_files。对每个文件同时获取其包名（来自 addons 表）和外部 VPK 状态（来自 external_files 表），一行展示完整上下文。",
+  "_v2_feature": "multi-table JOIN (joins array) + left join",
+  "_usage": "store.execute(json.load(open('queries/addon_full_profile.json')))",
+  "_note": "需要先 load_reference 加载外部 VPK。左连接确保没有外部记录的文件仍被列出。",
+  "select": [
+    ["files", "virtual_path"],
+    ["files", "source_name"],
+    ["files", "priority"],
+    ["addons", "name"],
+    ["external_files", "ext_source_name"]
+  ],
+  "from": "files",
+  "joins": [
+    {
+      "type": "left",
+      "with": "addons",
+      "on": {"eq": [["files", "source_name"], ["addons", "addon_id"]]}
+    },
+    {
+      "type": "left",
+      "with": "external_files",
+      "on": {"eq": [["files", "virtual_path"], ["external_files", "virtual_path"]]}
+    }
+  ],
+  "where": {"eq": ["is_active", true]},
+  "limit": 100
+}

@@ -821,7 +821,7 @@ def _build_store(
     )
 
     # sv_pure whitelist integration (runs for all modes, fixes B032)
-    whitelist_path = args.sv_pure or config.entry_points.pure_server_whitelist_path
+    whitelist_path = getattr(args, "sv_pure", None) or config.entry_points.pure_server_whitelist_path
     if whitelist_path:
         from parallelines.analysis.pure_whitelist import (
             filter_vfs_by_whitelist,

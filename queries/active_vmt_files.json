@@ -1,7 +1,7 @@
 {
-  "_comment": "活跃文件按扩展名统计 — 当前生效的文件中，各扩展名的数量分布。快速了解资源构成。",
-  "_usage": "store.execute(json.load(open('queries/active_by_extension.json')))",
-  "_note": "此查询无法用 JSON DSL 精确完成（需要 Python lambda 提取扩展名）。替代方案：用 like 过滤常见类型。以下示例列出 .vmt 材质文件。",
+  "_comment": "活跃 .vmt 材质 — 当前生效的 Valve Material Type 文件。用 like + ends_with 快速定位材质资源。",
+  "_usage": "store.execute(json.load(open('queries/active_vmt_files.json')))",
+  "_note": "v2 引擎新增 ends_with/contains/starts_with 字符串谓词，可直接过滤扩展名和路径模式。",
   "select": ["virtual_path", "source_name", "priority"],
   "from": "files",
   "where": {
