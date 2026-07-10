@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from parallelines.engine.query_ast import (
     BinaryPred,
     ColumnRef,
@@ -191,8 +193,6 @@ class QueryValidator:
         row_type = rel._row_type or (type(rel.rows[0]) if rel.rows else None)
         if row_type is None:
             return {}
-        import dataclasses
-
         if dataclasses.is_dataclass(row_type):
             return {f.name: _type_name(f.type) for f in dataclasses.fields(row_type)}
         return {}

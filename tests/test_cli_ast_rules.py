@@ -14,7 +14,7 @@ import argparse
 import logging
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -622,7 +622,8 @@ def test_r19_repl_external_vpk_priority_hardcoded() -> None:
 
     session = ReplSession(config, args)
     session.store = store  # bypass _build_store
-    import tempfile, pathlib
+    import tempfile
+    import pathlib
     tmp_vpk = pathlib.Path(tempfile.mktemp(suffix=".vpk"))
     tmp_vpk.write_text("not a real vpk")
     try:

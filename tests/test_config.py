@@ -7,11 +7,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from parallelines.config import (
-    AnalysisConfig,
     AppConfig,
-    EntryPointsConfig,
-    GeneralConfig,
-    OutputConfig,
     load_config,
 )
 

@@ -69,7 +69,7 @@ class TestGraphviz(unittest.TestCase):
 
             content = result.read_text(encoding="utf-8")
             lines = content.splitlines()
-            node_lines = [l for l in lines if "fillcolor" in l]
+            node_lines = [line for line in lines if "fillcolor" in line]
             self.assertLessEqual(len(node_lines), 10)
 
     def test_generate_dot_vmt_node_color(self) -> None:

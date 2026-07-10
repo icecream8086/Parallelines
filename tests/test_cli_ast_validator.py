@@ -756,7 +756,6 @@ class TestB20bSvPureExternalIneffective:
         prettytable formatting).  The key assertion: the whitelist load/filter
         functions are never invoked during dispatch.
         """
-        from parallelines.repl import ReplSession
         with (
             patch("parallelines.cli.load_config") as mock_load_config,
             patch("parallelines.cli.set_language"),

@@ -295,7 +295,7 @@ class TestParserSpecialPredicates:
         q = QueryParser.parse(d)
         assert isinstance(q.where, InPred)
         assert q.where.column.column == "source_name"
-        assert [l.value for l in q.where.values] == ["base", "addon_x"]
+        assert [v.value for v in q.where.values] == ["base", "addon_x"]
 
     def test_parse_is_null(self):
         d = {

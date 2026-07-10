@@ -456,6 +456,27 @@ def _main(argv: list[str] | None = None) -> int:
         print(f"\nError: {_('cli.game_root_required')}")
         return 1
 
+    # ── Flag conflict warnings (B025-B031) ──────────────────────
+    mode_flags = sum([args.analyze, bool(args.external), args.repl])
+    if mode_flags > 1:
+        logger.warning(
+            "Multiple mode flags specified (--analyze, --external, --repl). "
+            "Only the first in dispatch order (analyze > external > repl) will be honored."
+        )
+    if args.no_cache and args.clean_cache:
+        logger.warning(
+            "--no-cache and --clean-cache specified together. "
+            "--clean-cache deletes the cache, then --no-cache skips saving."
+        )
+    if args.repl and args.sv_pure:
+        logger.warning(
+            "--sv-pure is not applied in REPL mode (only in --analyze mode)"
+        )
+    if args.repl and args.external:
+        logger.warning("--vpk-priority is ignored in REPL mode")
+    if not args.external and (getattr(args, "ref_query", "all") != "all" or args.vpk_priority != "highest"):
+        pass  # --ref-query and --vpk-priority only meaningful with --external, silently ignored
+
     try:
         if args.analyze:
             return cmd_analyze(config, args)
@@ -799,16 +820,7 @@ def _build_store(
         addon_manifests=None,
     )
 
-    return store, vfs
-
-
-def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
-    """Run full analysis: build VFS, build dep graph, run analyzers, output report."""
-    store, vfs = _build_store(config, args)
-    if store is None:
-        return 1
-
-    # 4c -- sv_pure whitelist integration
+    # sv_pure whitelist integration (runs for all modes, fixes B032)
     whitelist_path = args.sv_pure or config.entry_points.pure_server_whitelist_path
     if whitelist_path:
         from parallelines.analysis.pure_whitelist import (
@@ -830,6 +842,15 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
                 len(allowed_nodes),
                 blocked_count,
             )
+
+    return store, vfs
+
+
+def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
+    """Run full analysis: build VFS, build dep graph, run analyzers, output report."""
+    store, vfs = _build_store(config, args)
+    if store is None:
+        return 1
 
     # 5 -- Apply resource pollution filter (if --check-* flag given)
     _apply_check_filters(store, args)
@@ -1081,7 +1102,6 @@ def _run_query_and_print(store, query_spec: str) -> None:
         if isinstance(row, tuple):
             table.add_row([str(v) for v in row])
         else:
-            import dataclasses
             table.add_row([str(getattr(row, c)) for c in result.columns])
     print()
     print(table)

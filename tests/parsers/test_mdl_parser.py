@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from parallelines.parsers.mdl_parser import extract_mdl_dependencies
 

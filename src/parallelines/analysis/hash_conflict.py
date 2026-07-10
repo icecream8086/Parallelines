@@ -50,6 +50,8 @@ class HashConflictAnalyzer(Analyzer):
             sorted_nodes = sorted(enabled, key=lambda n: n.priority, reverse=True)
             winner = sorted_nodes[0]
             for loser in sorted_nodes[1:]:
+                if loser.file_hash == winner.file_hash:
+                    continue
                 rows.append(
                     HashConflictRow(
                         virtual_path=virtual_path,
