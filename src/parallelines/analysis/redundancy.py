@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import icontract
+
 from parallelines.analysis.base import Analyzer
 from parallelines.engine import ResultStore
 
@@ -15,6 +17,7 @@ class RedundancyAnalyzer(Analyzer):
     overridden and by whom.
     """
 
+    @icontract.ensure(lambda self, vfs, store: vfs is not None or store.files is None)
     def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Mark all redundant FileNodes in the store.
 

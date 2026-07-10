@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+import os
+
+_SHOULD_CHECK = os.environ.get("PARALLELINES_NO_CONTRACTS", "").lower() not in ("1", "true", "yes")
+
+if _SHOULD_CHECK:
+    import icontract
+
+    _ensure = icontract.ensure
+else:
+
+    def _ensure(*args, **kwargs):  # type: ignore[misc]
+        def wrapper(f):
+            return f
+        return wrapper
+
+
 from parallelines.types import FileNode
 
 
@@ -25,6 +41,7 @@ class VirtualFileSystem:
         """
         self._files.setdefault(node.virtual_path, []).append(node)
 
+    @_ensure(lambda self: len(self._active) <= sum(len(v) for v in self._files.values()))
     def resolve(self) -> None:
         """For each virtual_path, pick the enabled FileNode with highest priority.
 
@@ -50,7 +67,9 @@ class VirtualFileSystem:
 
     def get_active_file(self, virtual_path: str) -> FileNode | None:
         """Return the active FileNode for a virtual path, or None if no active file exists."""
-        return self._active.get(virtual_path)
+        result = self._active.get(virtual_path)
+        assert result is None or result.virtual_path == virtual_path
+        return result
 
     def get_all_active(self) -> list[FileNode]:
         """Return all active (resolved winner) FileNodes."""

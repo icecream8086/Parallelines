@@ -78,10 +78,10 @@ class TestRedundancyAnalyzer(unittest.TestCase):
         self.assertEqual(len(redundant), 0)
 
     def test_none_vfs(self) -> None:
-        """When VFS is None, the analyzer returns without error."""
+        """When VFS is None, analyzer does not crash and store.files remains None."""
         store = ResultStore()
         self.analyzer.analyze(None, None, store=store)
-        # store.files is None since no VFS was provided; no assertions needed.
+        assert store.files is None, "VFS=None 时不应创建 files"
 
     def test_multiple_redundant_same_path(self) -> None:
         """Multiple redundant files for the same path should all be reported."""

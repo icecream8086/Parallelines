@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+import os
+
+_SHOULD_CHECK = os.environ.get("PARALLELINES_NO_CONTRACTS", "").lower() not in ("1", "true", "yes")
+
+if _SHOULD_CHECK:
+    import icontract
+
+    _ensure = icontract.ensure
+else:
+
+    def _ensure(*args, **kwargs):  # type: ignore[misc]
+        def wrapper(f):
+            return f
+        return wrapper
+
+
 import networkx as nx
 
 
@@ -37,11 +53,13 @@ class DependencyGraph:
             raise RuntimeError("Cannot add nodes to a frozen graph")
         self._graph.add_node(node_id, **attrs)
 
+    @_ensure(lambda self: self._frozen)
     def freeze(self) -> None:
         """Prevent further mutations to the graph."""
         self._frozen = True
         self._graph = nx.freeze(self._graph)
 
+    @_ensure(lambda result, node: node not in result)
     def get_descendants(self, node: str) -> set[str]:
         """Return all nodes reachable from *node* via directed edges."""
         return nx.descendants(self._graph, node)
@@ -72,11 +90,13 @@ class DependencyGraph:
         return result
 
     @property
+    @_ensure(lambda result: result >= 0)
     def node_count(self) -> int:
         """Return the number of nodes in the graph."""
         return self._graph.number_of_nodes()
 
     @property
+    @_ensure(lambda result: result >= 0)
     def edge_count(self) -> int:
         """Return the number of edges in the graph."""
         return self._graph.number_of_edges()

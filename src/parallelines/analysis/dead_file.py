@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import icontract
+
 from parallelines.analysis.base import Analyzer
 from parallelines.engine import ResultStore
 
@@ -25,6 +27,15 @@ class DeadFileAnalyzer(Analyzer):
         """
         self.entry_points = entry_points
 
+    @icontract.ensure(
+        lambda self, store: store.files is None
+        or not (self.entry_points is not None and store.files is not None
+                and any(
+                    r.is_dead and r.virtual_path in self.entry_points
+                    for r in store.files.rows
+                )),
+        "入口点不应被标记为 dead"
+    )
     def analyze(self, vfs, graph, store: ResultStore) -> None:
         """Mark dead (unreachable) files in the store.
 

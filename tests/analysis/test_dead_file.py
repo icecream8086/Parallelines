@@ -51,10 +51,11 @@ def test_normal_case() -> None:
 
 
 def test_empty_vfs() -> None:
-    """None VFS / graph should not raise."""
+    """None VFS / graph 不抛异常，且 store.files 保持 None。"""
     analyzer = DeadFileAnalyzer(entry_points={"a.txt"})
     store = ResultStore()
     analyzer.analyze(None, None, store)
+    assert store.files is None, "VFS=None 时不应创建 files"
 
 
 def test_no_entry_points() -> None:

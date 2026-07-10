@@ -95,11 +95,11 @@ class TestNoConflictWhenAllSameHash:
         @given(
             path_hash_pairs=st.lists(
                 st.tuples(
-                    st.text(min_size=1, max_size=8),  # virtual_path
-                    st.text(min_size=1, max_size=8),  # hash (shared for this path)
+                    st.text(min_size=0, max_size=8),  # virtual_path
+                    st.text(min_size=0, max_size=8),  # hash (shared for this path)
                     st.lists(
                         st.tuples(
-                            st.text(min_size=1, max_size=6),  # source_name
+                            st.text(min_size=0, max_size=6),  # source_name
                             st.integers(min_value=0, max_value=10),  # priority
                             st.booleans(),  # is_enabled
                         ),
@@ -113,7 +113,7 @@ class TestNoConflictWhenAllSameHash:
                 unique_by=lambda t: t[0],  # unique virtual_path across groups
             ),
         )
-        @settings(max_examples=200)
+        @settings(max_examples=300)
         def _run(path_hash_pairs):
             specs: list[_FileSpec] = []
             for path, hash_val, sources in path_hash_pairs:
@@ -143,13 +143,13 @@ class TestNoConflictWhenAllSameHash:
         @given(
             path_groups=st.lists(
                 st.tuples(
-                    st.text(min_size=1, max_size=8),  # path
+                    st.text(min_size=0, max_size=8),  # path
                     st.lists(
                         st.tuples(
-                            st.text(min_size=1, max_size=6),  # source_name
+                            st.text(min_size=0, max_size=6),  # source_name
                             st.one_of(
                                 st.none(),
-                                st.text(min_size=1, max_size=8),
+                                st.text(min_size=0, max_size=8),
                             ),  # hash: None or some string
                             st.integers(min_value=0, max_value=10),  # priority
                             st.booleans(),  # enabled
@@ -164,7 +164,7 @@ class TestNoConflictWhenAllSameHash:
                 unique_by=lambda t: t[0],  # unique virtual_path across groups
             ),
         )
-        @settings(max_examples=200)
+        @settings(max_examples=300)
         def _run(path_groups):
             specs: list[_FileSpec] = []
             for path, sources in path_groups:
@@ -238,9 +238,9 @@ class TestConflictRequiresHashDiffer:
         @given(
             file_specs=st.lists(
                 st.tuples(
-                    st.text(min_size=1, max_size=8),  # virtual_path
-                    st.text(min_size=1, max_size=6),  # source_name
-                    st.one_of(st.none(), st.text(min_size=1, max_size=8)),  # hash
+                    st.text(min_size=0, max_size=8),  # virtual_path
+                    st.text(min_size=0, max_size=6),  # source_name
+                    st.one_of(st.none(), st.text(min_size=0, max_size=8)),  # hash
                     st.integers(min_value=0, max_value=10),  # priority
                     st.booleans(),  # enabled
                 ),
@@ -248,7 +248,7 @@ class TestConflictRequiresHashDiffer:
                 max_size=20,
             ),
         )
-        @settings(max_examples=200)
+        @settings(max_examples=300)
         def _run(file_specs):
             specs: list[_FileSpec] = [
                 (path, src, h, prio, en)
@@ -398,9 +398,9 @@ class TestNoConflictOnUniquePaths:
         @given(
             file_specs=st.lists(
                 st.tuples(
-                    st.text(min_size=1, max_size=10),  # virtual_path
-                    st.text(min_size=1, max_size=6),  # source_name
-                    st.one_of(st.none(), st.text(min_size=1, max_size=8)),  # hash
+                    st.text(min_size=0, max_size=10),  # virtual_path
+                    st.text(min_size=0, max_size=6),  # source_name
+                    st.one_of(st.none(), st.text(min_size=0, max_size=8)),  # hash
                     st.integers(min_value=0, max_value=10),  # priority
                 ),
                 min_size=1,
@@ -409,7 +409,7 @@ class TestNoConflictOnUniquePaths:
                 unique_by=lambda t: t[0],
             ),
         )
-        @settings(max_examples=200)
+        @settings(max_examples=300)
         def _run(file_specs):
             specs: list[_FileSpec] = [
                 (path, src, h, prio, True)

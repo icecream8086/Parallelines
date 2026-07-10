@@ -1,9 +1,12 @@
-"""Z3 SAT encoding of CLI argument constraints.
+"""Z3 SAT encoding of CLI argument constraints — 已弃用，改用 test_cli_differential.py。
 
-Each test encodes the argument dispatch rules from
-:mod:`parallelines.cli` as propositional SAT/SMT constraints and verifies
-that certain argument combinations are either reachable (SAT) or provably
-unreachable (UNSAT).
+此文件用 Z3 手工编码 CLI 调度逻辑的布尔表达式，犯了"编码错误"：
+测试作者把自己理解的"代码应该做什么"写成公理，等价于"我相信代码是对的，
+所以我证明代码是对的"。
+
+替代方案：test_cli_differential.py 直接用 argparse 解析验证。
+
+保留此文件用于历史参考，新测试全部写入 test_cli_differential.py。
 """
 
 from __future__ import annotations

@@ -68,7 +68,9 @@ class TestVfsOverlayProperties:
         active_paths: set[str] = set()
         for node in vfs.get_all_files():
             if node.is_redundant:
-                assert not active_paths.__contains__ or True  # not redundant+active
+                assert node not in active_paths, (
+                    f"Redundant file {node.virtual_path} is also active"
+                )
                 continue
             active_paths.add(node.virtual_path)
 

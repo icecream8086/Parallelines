@@ -77,5 +77,6 @@ markers = [
     "formal: 形式化验证测试 (z3 + hypothesis)",
     "slow: 慢速测试 (>5s)",
     "overnight: 夜间全量测试",
+    "deprecated: Tests that are superseded by contracts",
 ]
 

@@ -1,7 +1,12 @@
-"""Immutability invariant tests (INV-01 ~ INV-12)."""
+"""Immutability invariant tests (INV-01 ~ INV-12) — 待迁移至 icontract。
+
+警告：这些测试验证的是"不修改原对象"这类弱属性，已被第 0 层 icontract 契约覆盖。
+新代码优先在接口上添加 @icontract.ensure，不再新增此类测试。
+"""
 from __future__ import annotations
 
 import pytest
+import warnings
 
 from parallelines.engine import ResultStore
 from parallelines.engine.schema import FileRow
@@ -19,7 +24,16 @@ def store() -> ResultStore:
     return store
 
 
+@pytest.mark.deprecated
 class TestInvariants:
+    def setup_method(self) -> None:
+        warnings.warn(
+            "test_invariants.py 中的不变性测试已被第 0 层 icontract 覆盖。"
+            "新代码优先在接口上添加 @icontract.ensure，不再新增此类测试。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     def test_select_does_not_mutate(self, store: ResultStore):
         """INV-01: select returns new Relation, original unchanged."""
         orig = list(store.files.rows)

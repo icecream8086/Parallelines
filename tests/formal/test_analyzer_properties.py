@@ -104,8 +104,8 @@ def redundant_file_lists(draw) -> list[tuple[str, str, int, bool]]:
     for path in paths:
         n_copies = draw(st.integers(min_value=1, max_value=3))
         for _ in range(n_copies):
-            src = draw(st.text(min_size=1, max_size=8, alphabet=_ASCII))
-            pri = draw(st.integers(min_value=0, max_value=100))
+            src = draw(st.text(min_size=0, max_size=8))
+            pri = draw(st.integers(min_value=-10, max_value=100))
             enabled = draw(st.booleans()) if n_copies > 1 else True
             specs.append((path, src, pri, enabled))
     return specs
@@ -123,7 +123,7 @@ def paths_edges_and_entry_points(draw):
     """
     n_paths = draw(st.integers(min_value=2, max_value=8))
     paths = draw(st.lists(
-        st.text(min_size=1, max_size=10, alphabet=_ASCII),
+        st.text(min_size=0, max_size=10),
         min_size=n_paths,
         max_size=n_paths,
         unique=True,
@@ -266,7 +266,7 @@ class TestDeadFileProperties:
 
     @settings(suppress_health_check=[HealthCheck.too_slow])
     @given(paths=st.lists(
-        st.text(min_size=1, max_size=10, alphabet=_ASCII),
+        st.text(min_size=0, max_size=10),
         min_size=1,
         max_size=10,
         unique=True,

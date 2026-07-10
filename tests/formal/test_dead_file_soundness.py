@@ -366,7 +366,7 @@ class TestDeadFileConsistency:
             max_size=15,
         ),
     )
-    @settings(max_examples=75)
+    @settings(max_examples=300)
     def test_hypothesis_dead_file_consistency(
         self,
         paths: list[str],
@@ -412,7 +412,7 @@ class TestDeadFileConsistency:
 
     @given(
         paths=st.lists(
-            st.text(min_size=1, max_size=10), min_size=1, max_size=5, unique=True
+            st.text(min_size=0, max_size=10), min_size=1, max_size=5, unique=True
         ),
     )
     @settings(max_examples=20)
@@ -454,7 +454,7 @@ class TestDeadFileConsistency:
 
     @given(
         paths=st.lists(
-            st.text(min_size=1, max_size=10), min_size=3, max_size=6, unique=True
+            st.text(min_size=0, max_size=10), min_size=3, max_size=6, unique=True
         ),
     )
     @settings(max_examples=20)
@@ -515,7 +515,7 @@ class TestDeadFileCascade:
         chain_length=st.integers(2, 10),
         cut_point=st.integers(0, 9),
     )
-    @settings(max_examples=50)
+    @settings(max_examples=100)
     def test_cascade_on_broken_chain(
         self, chain_length: int, cut_point: int
     ) -> None:
@@ -565,7 +565,7 @@ class TestDeadFileCascade:
         depth=st.integers(1, 4),
         branching=st.integers(1, 3),
     )
-    @settings(max_examples=50)
+    @settings(max_examples=100)
     def test_cascade_in_tree(self, depth: int, branching: int) -> None:
         """Tree: remove root, whole subtree dead."""
         paths: list[str] = ["R"]

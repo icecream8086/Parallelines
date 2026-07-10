@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 from typing import Callable
 
+import icontract
 import networkx as nx
 
 from parallelines.engine.query_ast import (
@@ -29,6 +30,7 @@ class QueryExecutor:
     """Execute a validated Query against a ResultStore → Relation."""
 
     @staticmethod
+    @icontract.ensure(lambda result: result is not None)
     def execute(query: Query, store: ResultStore) -> Relation:
         """Execute a validated query and return a Relation."""
         # 1. Resolve source → base Relation
