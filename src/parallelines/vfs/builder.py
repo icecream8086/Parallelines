@@ -89,6 +89,7 @@ class VfsBuilder:
             self.num_workers = max(1, cpu_count - 1) if cpu_count > 2 else 1
 
         self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
+        self.source_paths: dict[str, str] = {}
 
         cache_dir = self.config.general.cache_dir or "./cache"
         self._cache = CacheManager(Path(cache_dir))
@@ -237,6 +238,7 @@ class VfsBuilder:
             # Scan VPKs in all Game* directories
             for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
                 vpk_queue.append((str(vpk_file), vpk_file.name, priority, False))
+                self.source_paths[vpk_file.name] = str(vpk_file)
 
             # Game update directories — skip loose file scanning
             if token in ("game update", "gameupdate"):
@@ -298,6 +300,7 @@ class VfsBuilder:
             for vpk_file in disable_dir.glob(self.strategy.addon_vpk_glob):
                 if vpk_file.suffix.lower() == ".vpk":
                     vpk_queue.append((str(vpk_file), vpk_file.name, -1000, True))
+                    self.source_paths[vpk_file.name] = str(vpk_file)
 
         # Sort addon VPKs in two groups with opposite ordering semantics:
         #   - addonlist items:  first in list  = highest priority  (ascending order)
@@ -322,10 +325,12 @@ class VfsBuilder:
             for idx, (vpk_path, is_disabled, _from_ws, _order) in enumerate(addon_vpks_sorted):
                 priority = 1000 + (total - idx)
                 vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
+                self.source_paths[vpk_path.name] = str(vpk_path)
         else:
             priority = 1000
             for vpk_path, is_disabled, _from_ws, _order in addon_vpks_sorted:
                 vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
+                self.source_paths[vpk_path.name] = str(vpk_path)
                 priority -= 1
 
         if self.debug:

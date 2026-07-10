@@ -13,6 +13,9 @@ _INCLUDE_SCRIPT_RE = re.compile(r'IncludeScript\s*\(\s*"([^"]+)"\s*\)')
 # Match PrecacheModel("path") — captures the model path argument.
 _PRECACHE_MODEL_RE = re.compile(r'PrecacheModel\s*\(\s*"([^"]+)"\s*\)')
 
+# Match PrecacheSound("path") — captures the sound path argument.
+_PRECACHE_SOUND_RE = re.compile(r'PrecacheSound\s*\(\s*"([^"]+)"\s*\)')
+
 
 def _resolve_include_script(raw: str) -> str:
     """Resolve an ``IncludeScript`` argument to a virtual filesystem path.
@@ -63,6 +66,13 @@ def extract_nut_dependencies(file_content: str) -> set[str]:
         for match in _PRECACHE_MODEL_RE.finditer(file_content):
             raw = match.group(1)
             dependencies.add(raw)
+
+        for match in _PRECACHE_SOUND_RE.finditer(file_content):
+            raw = match.group(1)
+            path = raw.strip().replace("\\", "/")
+            if not path.lower().startswith("sound/"):
+                path = "sound/" + path
+            dependencies.add(path)
 
         return dependencies
 

@@ -1,0 +1,30 @@
+{
+  "name": "Map soundscape coverage",
+  "description": "Which maps have corresponding soundscape files",
+  "from": "entry_points",
+  "select": [
+    "virtual_path",
+    "source_type"
+  ],
+  "where": {
+    "or": [
+      {
+        "eq": [
+          "source_type",
+          "soundscape"
+        ]
+      },
+      {
+        "eq": [
+          "source_type",
+          "map"
+        ]
+      }
+    ]
+  },
+  "order_by": {
+    "by": "virtual_path",
+    "dir": "asc"
+  },
+  "limit": 500
+}

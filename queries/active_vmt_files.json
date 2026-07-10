@@ -11,5 +11,5 @@
     ]
   },
   "order_by": {"by": "source_name", "dir": "asc"},
-  "limit": 100
+  "limit": 500
 }

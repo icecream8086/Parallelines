@@ -1,0 +1,8 @@
+{
+  "name": "Dead files by extension (complete graph)",
+  "description": "Dead file count grouped by extension, using complete dependency graph",
+  "from": "files",
+  "select": ["ext", "count", {"count_where": ["is_dead", true]}],
+  "group_by": {"key": "ext", "order": "desc", "by": "count"},
+  "limit": 50
+}

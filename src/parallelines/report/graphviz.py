@@ -35,7 +35,7 @@ def _node_color(node_id: str) -> str:
 def generate_dot(
     graph: DependencyGraph,
     output_path: str | Path,
-    max_nodes: int = 500,
+    max_nodes: int = 2000,
 ) -> Path:
     """Generate a Graphviz ``.dot`` file from a DependencyGraph.
 
@@ -49,7 +49,7 @@ def generate_dot(
     Args:
         graph: :class:`~parallelines.graph.deps.DependencyGraph` instance.
         output_path: Destination for the ``.dot`` file.
-        max_nodes: Maximum number of nodes to include (default 500).
+        max_nodes: Maximum number of nodes to include (default 2000).
 
     Returns:
         Resolved ``Path`` to the generated ``.dot`` file.
@@ -61,8 +61,9 @@ def generate_dot(
     all_nodes = list(nx_graph.nodes)
 
     if len(all_nodes) > max_nodes:
-        logger.info(
-            "Graph has %d nodes, limiting to top %d by degree centrality",
+        logger.warning(
+            "Graph has %d nodes, limiting to top %d by degree centrality "
+            "(--graphviz-max-nodes can be increased for full output)",
             len(all_nodes),
             max_nodes,
         )

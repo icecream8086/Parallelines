@@ -28,6 +28,12 @@ experiments/
 # Generated icon (build product from ico/logo.svg via scripts/generate_ico.py)
 ico/logo.ico
 
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # LSP / type checking
 .mypy_cache/
 .ruff_cache/

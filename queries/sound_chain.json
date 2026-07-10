@@ -1,0 +1,20 @@
+{
+  "name": "Sound dependency chain (full)",
+  "description": "Trace complete sound dependency chain from game_sounds_manifest to .wav files",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "like": [
+      "to_path",
+      "sound/*.wav"
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 500
+}

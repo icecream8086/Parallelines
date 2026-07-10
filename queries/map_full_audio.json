@@ -1,0 +1,20 @@
+{
+  "name": "Map full audio dependencies",
+  "description": "All wav files reachable from each map through _level_sounds and soundscapes edges",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "like": [
+      "to_path",
+      "sound/*.wav"
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 500
+}

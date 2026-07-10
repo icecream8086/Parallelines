@@ -1,0 +1,20 @@
+{
+  "name": "Particle system coverage",
+  "description": "Material references from .pcf particle files",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "like": [
+      "from_path",
+      "*.pcf"
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 200
+}

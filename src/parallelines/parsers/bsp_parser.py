@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 
 logger = logging.getLogger(__name__)
+
+# Matches ``exec`` calls within console commands.
+_EXEC_RE = re.compile(r'\bexec\s+(\S+)', re.IGNORECASE)
 
 
 def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
@@ -41,7 +45,6 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
     tmp_path: str | None = None
 
     try:
-        # Read from chain and write to a temporary file on disk.
         file_obj = chain[virtual_path]
         raw = file_obj.open_bin().read()
 
@@ -51,8 +54,7 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
 
         bsp = BSP(tmp_path)
 
-        # Extract texture names — they are bare names like
-        # "nature/dirtfloor008a" which need to become materials/ paths.
+        # Extract texture names.
         for tex in bsp.textures:
             if tex and isinstance(tex, str):
                 vmt_path = f"materials/{tex}.vmt"
@@ -62,6 +64,17 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
         for model_path in bsp.static_prop_models():
             if model_path and isinstance(model_path, str):
                 dependencies.add(model_path)
+
+        # Extract entity side effects (§5.3).
+        side_effects = extract_bsp_entity_side_effects(bsp)
+        for cmd in side_effects.get("commands", []):
+            for m in _EXEC_RE.finditer(cmd):
+                exec_target = m.group(1).strip().replace("\\", "/")
+                if not exec_target.endswith(".cfg"):
+                    exec_target += ".cfg"
+                if "/" not in exec_target:
+                    exec_target = "cfg/" + exec_target
+                dependencies.add(exec_target)
 
     except Exception as exc:
         logger.debug("Failed to parse bsp '%s': %s", virtual_path, exc)
@@ -73,3 +86,34 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
                 pass
 
     return dependencies
+
+
+def extract_bsp_entity_side_effects(bsp) -> dict[str, list[str]]:
+    """Extract side-effecting entity keyvalues from a parsed BSP.
+
+    Inspects entities with classnames that have persistent engine-wide
+    side effects:
+
+    * ``point_servercommand`` — its ``command`` keyvalue executes arbitrary
+      console commands (may ``exec`` config files).
+    * ``env_global`` — its ``globalstate`` keyvalue sets named global state.
+
+    Returns:
+        ``{"commands": [...], "globalstates": [...]}``
+    """
+    effects: dict[str, list[str]] = {"commands": [], "globalstates": []}
+    try:
+        ents = bsp.ents.entities if hasattr(bsp.ents, "entities") else bsp.ents
+        for ent in ents:
+            classname = str(ent.get("classname", "")).strip().lower()
+            if classname == "point_servercommand":
+                cmd = str(ent.get("command", "")).strip()
+                if cmd:
+                    effects["commands"].append(cmd)
+            elif classname == "env_global":
+                gs = str(ent.get("globalstate", "")).strip()
+                if gs:
+                    effects["globalstates"].append(gs)
+    except Exception as exc:
+        logger.debug("Entity extraction failed: %s", exc)
+    return effects

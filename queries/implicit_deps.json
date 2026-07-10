@@ -4,5 +4,5 @@
   "select": ["dependent_addon", "provider_addon", "virtual_path"],
   "from": "implicit_deps",
   "order_by": {"by": "dependent_addon", "dir": "asc"},
-  "limit": 100
+  "limit": 500
 }

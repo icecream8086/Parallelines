@@ -12,5 +12,5 @@
   "group_by": {"by": ["source_name"], "agg": {"script_count": "count"}},
   "having": {"gte": ["script_count", 1]},
   "order_by": {"by": "script_count", "dir": "desc"},
-  "limit": 30
+  "limit": 200
 }

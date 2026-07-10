@@ -4,5 +4,5 @@
   "select": ["virtual_path", "source_name", "source_type"],
   "from": "global_scripts",
   "order_by": {"by": "source_name", "dir": "asc"},
-  "limit": 100
+  "limit": 500
 }

@@ -83,6 +83,16 @@ class QueryParser:
                     f"'limit' must be an integer, got {type(limit).__name__}"
                 )
 
+            offset: int | None = d.get("offset")
+            if offset is not None and (not isinstance(offset, int) or isinstance(offset, bool)):
+                raise QueryParseError(
+                    f"'offset' must be an integer, got {type(offset).__name__}"
+                )
+            if offset is not None and offset < 0:
+                raise QueryParseError(
+                    f"'offset' must be >= 0, got {offset}"
+                )
+
             return Query(
                 select=select,
                 source=source,
@@ -92,6 +102,7 @@ class QueryParser:
                 having=having,
                 order_by=order_by,
                 limit=limit,
+                offset=offset,
             )
         except (KeyError, ValueError, TypeError) as e:
             raise QueryParseError(f"Failed to parse query: {e}") from e
@@ -180,6 +191,15 @@ class QueryParser:
             return GraphPred(
                 "descendant_is_script",
                 QueryParser._parse_col(p["descendant_is_script"]),
+            )
+        if "descendant_is_any" in p:
+            spec = p["descendant_is_any"]
+            col = spec["column"]
+            params = spec.get("params", {})
+            return GraphPred(
+                "descendant_is_any",
+                QueryParser._parse_col(col),
+                params=params,
             )
         if "starts_with" in p:
             col, pat = p["starts_with"]

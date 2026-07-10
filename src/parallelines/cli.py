@@ -322,6 +322,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="WHITELIST",
         help="Path to pure_server_whitelist.txt for sv_pure filtering",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Override query result limit",
+    )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Override query result offset",
+    )
 
     return parser
 
@@ -361,6 +373,13 @@ def print_summary_from_store(store: ResultStore) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows console may not support printing surrogate characters in file paths.
+    # Using surrogateescape prevents UnicodeEncodeError on report output.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(errors="surrogateescape")
+        except Exception:
+            pass
     try:
         return _main(argv)
     except KeyboardInterrupt:
@@ -867,7 +886,7 @@ def cmd_analyze(config: AppConfig, args: argparse.Namespace) -> int:
 
     # 8 -- Run inline query if --query was specified
     if getattr(args, "query", None):
-        _run_query_and_print(store, args.query)
+        _run_query_and_print(store, args.query, args=args)
 
     return 0
 
@@ -960,7 +979,7 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
 
     # 8 -- Run inline query if --query was specified
     if getattr(args, "query", None):
-        _run_query_and_print(store, args.query)
+        _run_query_and_print(store, args.query, args=args)
 
     return 0
 
@@ -1083,25 +1102,46 @@ def _resolve_query(query_spec: str) -> dict:
     return _json.loads(preset_path.read_text(encoding="utf-8"))
 
 
-def _run_query_and_print(store, query_spec: str) -> None:
+def _run_query_and_print(store, query_spec: str, args: argparse.Namespace | None = None) -> None:
     """Execute *query_spec* against *store* and print results."""
     from prettytable import PrettyTable
 
     query_dict = _resolve_query(query_spec)
+
+    # Apply CLI overrides for limit/offset if provided
+    if args is not None:
+        if args.limit is not None:
+            query_dict["limit"] = args.limit
+        if args.offset is not None:
+            query_dict["offset"] = args.offset
+
     result = store.execute(query_dict)
 
     comment = query_dict.get("_comment", "Query result")
+
+    # Large result protection: if output is to terminal, show first N rows
+    MAX_TERMINAL_ROWS = 200
+    total_rows = len(result.rows)
+    if total_rows > MAX_TERMINAL_ROWS:
+        display_rows = result.rows[:MAX_TERMINAL_ROWS]
+        truncated = True
+    else:
+        display_rows = result.rows
+        truncated = False
+
     table = PrettyTable()
-    table.title = f"{comment}: {len(result)} rows"
+    table.title = f"{comment}: {min(total_rows, MAX_TERMINAL_ROWS)} rows"
     table.field_names = list(result.columns)
     table.align = "l"
-    for row in result.rows:
+    for row in display_rows:
         if isinstance(row, tuple):
             table.add_row([str(v) for v in row])
         else:
             table.add_row([str(getattr(row, c)) for c in result.columns])
     print()
     print(table)
+    if truncated:
+        print(f"... and {total_rows - MAX_TERMINAL_ROWS} more rows. Use --format json for full export.")
     print()
 
 

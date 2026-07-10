@@ -111,12 +111,14 @@ class QueryExecutor:
         if query.order_by is not None:
             relation = QueryExecutor._apply_order_by(relation, query.order_by)
 
-        # 6. Apply limit if present
-        if query.limit is not None:
+        # 6. Apply limit / offset if present
+        if query.limit is not None or query.offset is not None:
+            start = query.offset or 0
+            end = (start + query.limit) if query.limit is not None else None
             relation = Relation(
                 name=relation.name,
                 columns=relation.columns,
-                rows=relation.rows[: query.limit],
+                rows=relation.rows[start:end],
             )
 
         # 7. Apply select (projection)
@@ -497,6 +499,10 @@ class QueryExecutor:
                 if pred.op == "descendant_is_script":
                     descendants = nx.descendants(graph, str(path))
                     return any(d.endswith(".nut") for d in descendants)
+                if pred.op == "descendant_is_any":
+                    descendants = nx.descendants(graph, str(path))
+                    exts = pred.params.get("extensions", [".nut"]) if pred.params else [".nut"]
+                    return any(d.lower().endswith(tuple(exts)) for d in descendants)
             except (nx.NetworkXError, KeyError):
                 return False
             return False

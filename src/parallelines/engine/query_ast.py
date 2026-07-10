@@ -63,8 +63,9 @@ class CompoundPred:
 
 @dataclass
 class GraphPred:
-    op: str  # "ancestor_is_map" | "descendant_is_script"
+    op: str  # "ancestor_is_map" | "descendant_is_script" | "descendant_is_any"
     column: ColumnRef
+    params: dict | None = None
 
 
 @dataclass
@@ -143,3 +144,4 @@ class Query:
     having: Predicate | None = None
     order_by: OrderByClause | None = None
     limit: int | None = None
+    offset: int | None = None

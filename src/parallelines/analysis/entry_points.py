@@ -12,6 +12,7 @@ For L4D2 these include:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from parallelines.game_strategy import GameStrategy, get_strategy
 
@@ -178,6 +179,50 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
         entry_points.add(gameinfo)
         logger.debug("discover_entry_points: found gameinfo.txt")
 
+    # 5. soundscapes_<mapname>.txt auto-detection (Section 3.1)
+    #     Engine auto-loads scripts/soundscapes_<mapname>.txt when loading a map.
+    soundscapes_auto = 0
+    for lower_path, original_path in active_paths_lower.items():
+        if lower_path.endswith(".bsp"):
+            map_name = Path(lower_path).stem
+            ss_path = f"scripts/soundscapes_{map_name}.txt"
+            if ss_path in active_paths_lower:
+                entry_points.add(active_paths_lower[ss_path])
+                soundscapes_auto += 1
+    if soundscapes_auto:
+        logger.debug(
+            "discover_entry_points: auto-discovered %d soundscapes entry points",
+            soundscapes_auto,
+        )
+
+    # 6. maps/*_level_sounds.txt auto-detection (Section 3.2)
+    #     Engine auto-loads maps/<mapname>_level_sounds.txt when loading a map.
+    levelsounds_auto = 0
+    for lower_path, original_path in active_paths_lower.items():
+        if lower_path.endswith(".bsp"):
+            map_name = Path(lower_path).stem
+            ls_path = f"maps/{map_name}_level_sounds.txt"
+            if ls_path in active_paths_lower:
+                entry_points.add(active_paths_lower[ls_path])
+                levelsounds_auto += 1
+    if levelsounds_auto:
+        logger.debug(
+            "discover_entry_points: auto-discovered %d level_sounds entry points",
+            levelsounds_auto,
+        )
+
+    # 7. missions/*.txt as entry points (Section 3.3)
+    missions_count = 0
+    for lower_path, original_path in active_paths_lower.items():
+        if lower_path.startswith("missions/") and lower_path.endswith(".txt"):
+            entry_points.add(original_path)
+            missions_count += 1
+    if missions_count:
+        logger.debug(
+            "discover_entry_points: found %d missions entry points",
+            missions_count,
+        )
+
     logger.info("discover_entry_points: found %d entry points", len(entry_points))
     return entry_points
 
@@ -266,3 +311,34 @@ def get_known_entry_points(game: str) -> set[str]:
         game,
     )
     return result
+
+
+def classify_entry_point(path: str) -> str:
+    """Classify an entry point path into a source_type label.
+
+    Returns one of: ``manifest``, ``map``, ``mission``, ``soundscape``,
+    ``level_sounds``, ``population``, ``script``, or ``user_specified``.
+    """
+    lower = path.lower()
+    if "manifest" in lower:
+        return "manifest"
+    if lower.endswith(".bsp"):
+        return "map"
+    if lower.startswith("missions/"):
+        return "mission"
+    if "soundscapes_" in lower and lower.endswith(".txt"):
+        return "soundscape"
+    if lower.endswith("_level_sounds.txt"):
+        return "level_sounds"
+    if lower.endswith("population.txt"):
+        return "population"
+    if lower.endswith(".nut") or lower.startswith("scripts/vscripts/"):
+        return "script"
+    if lower in (
+        "cfg/config.cfg",
+        "cfg/autoexec.cfg",
+        "gameinfo.txt",
+        "scripts/sound_prefetch.txt",
+    ):
+        return "script"
+    return "user_specified"

@@ -5,5 +5,5 @@
   "from": "dep_conflicts",
   "where": {"neq": ["actual_source", "MISSING"]},
   "order_by": {"by": "from_path", "dir": "asc"},
-  "limit": 200
+  "limit": 500
 }

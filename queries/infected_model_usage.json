@@ -1,0 +1,20 @@
+{
+  "name": "Infected model usage",
+  "description": "Which entry points reference infected models",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "like": [
+      "to_path",
+      "models/infected/*.mdl"
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 200
+}

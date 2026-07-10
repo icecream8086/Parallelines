@@ -25,6 +25,11 @@ class CacheManager:
         dependencies.parquet    -- DataFrame of dependency edges
     """
 
+    # Parser version — increment each time a new parser is added or an existing
+    # parser changes its extraction logic.  Old caches are invalidated so the
+    # dependency graph is guaranteed complete.
+    PARSER_VERSION = 2
+
     def __init__(
         self,
         cache_dir: str | Path,
@@ -55,6 +60,10 @@ class CacheManager:
             with open(meta_path) as f:
                 cache_meta: dict = json.load(f)
         except (json.JSONDecodeError, OSError):
+            return False
+
+        # Check parser version — invalidate when parsers have changed.
+        if cache_meta.get("parser_version", 0) < self.PARSER_VERSION:
             return False
 
         # Extract the entries sub-dict for per-VPK comparison.
@@ -130,6 +139,7 @@ class CacheManager:
                 edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
         except Exception:
             return
+        meta["parser_version"] = self.PARSER_VERSION
         meta_path = self.cache_dir / "meta.json"
         with open(meta_path, "w") as f:
             json.dump(meta, f)

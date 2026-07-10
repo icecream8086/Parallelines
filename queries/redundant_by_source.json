@@ -6,5 +6,5 @@
   "where": {"eq": ["is_redundant", true]},
   "group_by": {"by": ["source_name"], "agg": {"redundant_count": "count"}},
   "order_by": {"by": "redundant_count", "dir": "desc"},
-  "limit": 30
+  "limit": 200
 }

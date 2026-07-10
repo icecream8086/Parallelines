@@ -11,5 +11,5 @@
   "group_by": {"by": ["source_name"], "agg": {"file_count": "count"}},
   "having": {"gte": ["file_count", 10]},
   "order_by": {"by": "file_count", "dir": "desc"},
-  "limit": 30
+  "limit": 200
 }

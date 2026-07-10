@@ -5,5 +5,5 @@
   "from": "files",
   "group_by": {"by": ["source_name"], "agg": {"cnt": "count"}},
   "order_by": {"by": "cnt", "dir": "desc"},
-  "limit": 30
+  "limit": 200
 }

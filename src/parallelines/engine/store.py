@@ -28,13 +28,23 @@ T = TypeVar("T")
 
 def _classify_entry_point(path: str) -> str:
     """Classify an entry point path into a source_type label."""
-    if "manifest" in path.lower():
+    lower = path.lower()
+    if "manifest" in lower:
         return "manifest"
-    if path.endswith(".bsp"):
+    if lower.endswith(".bsp"):
         return "map"
-    if path.endswith(".nut") or path.startswith("scripts/vscripts/"):
+    if lower.startswith("missions/"):
+        return "mission"
+    if "soundscapes_" in lower and lower.endswith(".txt"):
+        return "soundscape"
+    if lower.endswith("_level_sounds.txt"):
+        return "level_sounds"
+    if lower.endswith("population.txt"):
+        return "population"
+    if lower.endswith(".nut") or lower.startswith("scripts/vscripts/"):
         return "script"
-    if path in ("cfg/game.cfg", "cfg/autoexec.cfg", "gameinfo.txt"):
+    if lower in ("cfg/config.cfg", "cfg/autoexec.cfg", "gameinfo.txt",
+                 "scripts/sound_prefetch.txt"):
         return "script"
     return "user_specified"
 

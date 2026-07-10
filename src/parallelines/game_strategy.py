@@ -60,6 +60,8 @@ class GameStrategy:
     script_entries: list[str] = field(default_factory=lambda: [
         "cfg/config.cfg",
         "cfg/autoexec.cfg",
+        "scripts/population.txt",
+        "scripts/sound_prefetch.txt",
     ])
 
     # ── 解析器选择 ─────────────────────────────────────────
@@ -75,6 +77,12 @@ class GameStrategy:
 
     # 是否自动从 missions/*.txt 推导地图入口点
     derive_maps_from_missions: bool = True
+
+    # 自动检测 scripts/soundscapes_<mapname>.txt 作为入口点
+    auto_detect_soundscapes_maps: bool = True
+
+    # 自动检测 maps/*_level_sounds.txt 作为入口点
+    auto_detect_level_sounds: bool = True
 
     # ── source_type 标记名称 ──────────────────────────────
     # addon VPK 在 VFS 中的 source_type 标签
@@ -107,10 +115,14 @@ def _build_registry() -> dict[str, GameStrategy]:
         game_id="l4d2",
         extra_manifests=[
             "scripts/melee/melee_manifest.txt",
+            "scripts/bonus_maps_manifest.txt",
+            "scripts/sprays_manifest.txt",
         ],
         script_entries=[
             "cfg/config.cfg",
             "cfg/autoexec.cfg",
+            "scripts/population.txt",
+            "scripts/sound_prefetch.txt",
         ],
         bsp_entry_limit=0,  # 全部 BSP 作为入口点
     )

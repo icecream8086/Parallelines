@@ -1,0 +1,20 @@
+{
+  "name": "UI texture usage",
+  "description": "Texture references from .res UI resource files",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "like": [
+      "from_path",
+      "*.res"
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 200
+}

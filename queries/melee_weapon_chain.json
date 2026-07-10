@@ -1,0 +1,30 @@
+{
+  "name": "Melee weapon reference chain",
+  "description": "All model references from melee weapon definitions",
+  "from": "dependencies",
+  "select": [
+    "from_path",
+    "to_path"
+  ],
+  "where": {
+    "and": [
+      {
+        "like": [
+          "from_path",
+          "scripts/melee/*"
+        ]
+      },
+      {
+        "like": [
+          "to_path",
+          "*.mdl"
+        ]
+      }
+    ]
+  },
+  "order_by": {
+    "by": "from_path",
+    "dir": "asc"
+  },
+  "limit": 100
+}

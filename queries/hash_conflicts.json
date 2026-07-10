@@ -4,5 +4,5 @@
   "select": ["virtual_path", "winner_source", "loser_source", "winner_hash", "loser_hash"],
   "from": "hash_conflicts",
   "order_by": {"by": "virtual_path", "dir": "asc"},
-  "limit": 200
+  "limit": 500
 }
