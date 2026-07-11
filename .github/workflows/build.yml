@@ -11,6 +11,7 @@ on:
       - "queries/**"
       - "ico/**"
       - "environment.yml"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -27,16 +28,17 @@ jobs:
           - os: ubuntu-22.04
             shell: bash -l {0}
             py: python
-            pip: pip
           - os: windows-latest
             shell: pwsh
-            py: conda run -n parallelines python
-            pip: conda run -n parallelines pip
+            py: python
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
       run:
         shell: ${{ matrix.shell }}
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -56,10 +58,10 @@ jobs:
           sudo apt install -y python3-dev binutils libcairo2-dev
 
       - name: Install project package
-        run: ${{ matrix.pip }} install -e ".[dev,build]"
+        run: pip install -e ".[dev,build]"
 
       - name: Generate icon
-        run: ${{ matrix.py }} scripts/generate_ico.py
+        run: python scripts/generate_ico.py
 
       - name: Cache PyInstaller analysis
         uses: actions/cache@v4
@@ -71,14 +73,20 @@ jobs:
           restore-keys: |
             pyinstaller-${{ matrix.os }}-
 
+      - name: Lint check (ruff)
+        run: python -m ruff check src/ tests/
+
+      - name: Type check (mypy)
+        run: python -m mypy src/parallelines/ --no-error-summary
+
       - name: Run tests
-        run: ${{ matrix.py }} -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
+        run: python -m pytest tests/ -q --tb=short -m "not slow and not overnight" --ignore=tests/engine/test_query_properties.py
 
       - name: Build minimal binary
-        run: ${{ matrix.py }} scripts/build_exe.py --minimal
+        run: python scripts/build_exe.py --minimal
 
       - name: Post-build artifact audit
-        run: ${{ matrix.py }} scripts/ci_audit.py dist/parallelines --json audit_report.json
+        run: python scripts/ci_audit.py dist/parallelines --json audit_report.json
 
       - name: Upload audit report
         uses: actions/upload-artifact@v4
@@ -90,7 +98,7 @@ jobs:
       - name: Package dist (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          $version = & conda run -n parallelines python -c "from importlib.metadata import version; print(version('parallelines'))"
+          $version = python -c "from importlib.metadata import version; print(version('parallelines'))"
           $name = "parallelines-$version-win64-minimal.zip"
           7z a -tzip -r $name dist/parallelines/*
           "ARTIFACT_NAME=$name" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV

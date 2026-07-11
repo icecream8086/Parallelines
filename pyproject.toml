@@ -72,6 +72,25 @@ include = ["parallelines*"]
 [tool.setuptools.package-data]
 "parallelines" = ["py.typed"]
 
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    "queries/",
+    "docs/",
+    "devdocs/",
+    ".git/",
+    "__pycache__/",
+    "*.ipynb",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
 [tool.pytest.ini_options]
 markers = [
     "formal: 形式化验证测试 (z3 + hypothesis)",
