@@ -90,6 +90,11 @@ class QueryValidator:
             # Check binary predicates that involve this column
             pass  # handled by iterating predicates below
 
+        # Aggregation output columns are always numeric (count/sum/avg produce int/float).
+        if query.group_by is not None:
+            for agg_key in query.group_by.aggregations:
+                type_map[agg_key] = "int"
+
         # Walk predicates for R2 checks
         if query.where is not None:
             QueryValidator._check_predicate_types(

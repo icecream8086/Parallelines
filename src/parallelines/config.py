@@ -63,12 +63,19 @@ class OutputConfig:
 
 
 @dataclass
+class ToolchainConfig:
+    sq_path: str = ""  # path to Squirrel compiler/decompiler binary (deprecated)
+    ice_key: str = ""  # ICE decryption key; "" = auto-detect from game ID
+
+
+@dataclass
 class AppConfig:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
     entry_points: EntryPointsConfig = field(default_factory=EntryPointsConfig)
     addons: AddonsConfig = field(default_factory=AddonsConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    toolchain: ToolchainConfig = field(default_factory=ToolchainConfig)
 
 
 def load_config(config_path: Optional[Path] = None) -> AppConfig:

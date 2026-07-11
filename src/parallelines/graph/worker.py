@@ -84,6 +84,13 @@ except ImportError:
     HAS_NUC = False
 
 try:
+    from parallelines.parsers.ani_parser import extract_ani_dependencies
+
+    HAS_ANI = True
+except ImportError:
+    HAS_ANI = False
+
+try:
     from parallelines.parsers.texture_list_parser import extract_texture_list_dependencies
 
     HAS_TEXTURE_LIST = True
@@ -171,6 +178,9 @@ def _dispatch_parse(virtual_path: str, ext: str, content: bytes) -> set[str]:
         return extract_pcf_dependencies(content)
     if ext == ".nuc" and HAS_NUC:
         return extract_nuc_dependencies(content)
+    if ext == ".ani" and HAS_ANI:
+        text = content.decode("utf-8", errors="replace")
+        return extract_ani_dependencies(text)
     return set()
 
 

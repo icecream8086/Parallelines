@@ -131,6 +131,7 @@ class VfsBuilder:
             return vfs
 
         search_paths = extract_search_paths(gameinfo_data)
+        self._search_paths = search_paths
         addon_roots = extract_addon_roots(search_paths)
 
         # 2 -- Collect VPK manifest for cache validation
@@ -579,9 +580,21 @@ class VfsBuilder:
             except Exception as exc:
                 logger.debug("Failed to add VPK to chain %s: %s", vpk_path.name, exc)
 
-        # Main game VPKs
-        for vpk_file in sorted(self.game_root.glob("*_dir.vpk")):
-            _add_vpk(vpk_file)
+        # Game VPKs from all search paths (not just game_root)
+        if hasattr(self, "_search_paths"):
+            from parallelines.parsers.gameinfo import extract_all_game_dirs
+
+            all_game_dirs = extract_all_game_dirs(self._search_paths)
+            for _token, game_dir in all_game_dirs:
+                resolved = self._resolve_path(game_dir)
+                if resolved is None or not resolved.is_dir():
+                    continue
+                for vpk_file in sorted(resolved.glob("*_dir.vpk")):
+                    _add_vpk(vpk_file)
+        else:
+            # Fallback: scan only game_root (legacy code path)
+            for vpk_file in sorted(self.game_root.glob("*_dir.vpk")):
+                _add_vpk(vpk_file)
 
         # Addon VPKs (including workshop)
         addons_dir = self.game_root / "addons"

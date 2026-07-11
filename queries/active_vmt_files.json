@@ -7,7 +7,7 @@
   "where": {
     "and": [
       {"eq": ["is_active", true]},
-      {"like": ["virtual_path", "materials/%.vmt"]}
+      {"like": ["virtual_path", "materials/*.vmt"]}
     ]
   },
   "order_by": {"by": "source_name", "dir": "asc"},

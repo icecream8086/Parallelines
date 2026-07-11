@@ -1,8 +1,11 @@
 {
-  "name": "Dead files by extension (complete graph)",
-  "description": "Dead file count grouped by extension, using complete dependency graph",
+  "_comment": "死文件按来源类型统计 — 按 source_type (game/addon/vpk) 分组统计死文件数量。评估哪种来源类型贡献最多的无引用文件。",
+  "_note": "原 ext 列不存在于 FileRow schema 中；按扩展名分类需要用 ends_with/like 谓词逐类型查询。",
+  "_usage": "store.execute(json.load(open('queries/complete_dead_by_type.json')))",
+  "select": ["source_type", "count"],
   "from": "files",
-  "select": ["ext", "count", {"count_where": ["is_dead", true]}],
-  "group_by": {"key": "ext", "order": "desc", "by": "count"},
+  "where": {"eq": ["is_dead", true]},
+  "group_by": {"by": ["source_type"], "agg": {"count": "count"}},
+  "order_by": {"by": "count", "dir": "desc"},
   "limit": 50
 }

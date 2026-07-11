@@ -57,7 +57,11 @@ def extract_vmt_dependencies(file_content: str) -> set[str]:
 
         for key in _TEXTURE_KEYS:
             # Build a pattern for the specific key
-            pattern = re.compile(re.escape(key) + r'\s+"([^"]+)"', re.IGNORECASE)
+            # Valve VMT accepts both `$key "val"` and `"$key" "val"`.
+            pattern = re.compile(
+                r'(?:' + re.escape(key) + r'|"' + re.escape(key) + r'")\s+"([^"]+)"',
+                re.IGNORECASE,
+            )
             for match in pattern.finditer(file_content):
                 raw_value = match.group(1)
                 dependencies.add(_normalise_texture_path(raw_value))

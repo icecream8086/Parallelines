@@ -122,6 +122,13 @@ except ImportError:
     HAS_NUC = False
 
 try:
+    from parallelines.parsers.ani_parser import extract_ani_dependencies
+
+    HAS_ANI = True
+except ImportError:
+    HAS_ANI = False
+
+try:
     from parallelines.parsers.texture_list_parser import extract_texture_list_dependencies
 
     HAS_TEXTURE_LIST = True
@@ -136,7 +143,7 @@ except Exception:
 
 # File extensions whose content we actually read to extract deps.
 _TEXT_EXTENSIONS: frozenset[str] = frozenset({
-    ".vmt", ".txt", ".nut", ".mdl", ".bsp", ".res", ".pcf", ".nuc",
+    ".vmt", ".txt", ".nut", ".mdl", ".bsp", ".res", ".pcf", ".nuc", ".ani",
 })
 
 
@@ -243,6 +250,8 @@ class GraphBuilder:
                 deps = self._extract_res_deps(node)
             elif ext == ".nuc" and HAS_NUC:
                 deps = self._extract_nuc_deps(node)
+            elif ext == ".ani" and HAS_ANI:
+                deps = self._extract_ani_deps(node)
             elif ext == ".bsp" and HAS_BSP:
                 deps = self._extract_bsp_deps(node)
             else:
@@ -253,8 +262,9 @@ class GraphBuilder:
                 edges = [(node.virtual_path, dep) for dep in deps]
                 graph.add_edges(edges)
 
-        # Add synthetic map -> audio edges after all file parsing is complete.
+        # Add synthetic edges after all file parsing is complete.
         self._add_map_audio_edges(graph, self.vfs)
+        self._add_phy_edges(graph, self.vfs)
 
         elapsed = time.perf_counter() - t0
         logger.debug(
@@ -298,7 +308,7 @@ class GraphBuilder:
             graph.add_node(node.virtual_path)
 
         # Phase A: Pre-read file content
-        _TEXT_EXTENSIONS: frozenset[str] = frozenset({".vmt", ".txt", ".nut", ".res"})
+        _TEXT_EXTENSIONS: frozenset[str] = frozenset({".vmt", ".txt", ".res", ".ani"})
         _BIN_EXTENSIONS: frozenset[str] = frozenset({".pcf", ".nuc"})
 
         file_batch: list[tuple[str, str, bytes]] = []
@@ -312,6 +322,17 @@ class GraphBuilder:
                 mdl_bsp_files.append(node)
             elif ext == ".bsp":
                 mdl_bsp_files.append(node)
+            elif ext == ".nut":
+                raw = self._read_bytes(node.virtual_path)
+                if raw:
+                    if raw[:2] == b"\xfa\xfa":
+                        logger.debug(
+                            "Squirrel bytecode (.cnut) in %s — skipping",
+                            node.virtual_path,
+                        )
+                        continue
+                    content = raw.decode("utf-8", errors="replace")
+                    file_batch.append((node.virtual_path, ext, content.encode("utf-8", errors="replace")))
             elif ext in _TEXT_EXTENSIONS:
                 content = self._read_text(node.virtual_path)
                 if content:
@@ -368,6 +389,9 @@ class GraphBuilder:
 
         # Add synthetic map -> audio edges
         self._add_map_audio_edges(graph, vfs)
+
+        # Add synthetic .mdl -> .phy edges
+        self._add_phy_edges(graph, vfs)
 
         elapsed = time.perf_counter() - t0
         logger.info(
@@ -449,6 +473,8 @@ class GraphBuilder:
             return extract_pcf_dependencies(content)
         if ext == ".nuc" and HAS_NUC:
             return extract_nuc_dependencies(content)
+        if ext == ".ani" and HAS_ANI:
+            return extract_ani_dependencies(content.decode("utf-8", errors="replace"))
         return set()
 
     # ------------------------------------------------------------------
@@ -465,8 +491,19 @@ class GraphBuilder:
         return extract_mdl_dependencies(self.chain, node.virtual_path)
 
     def _extract_nut_deps(self, node) -> set[str]:
-        content = self._read_text(node.virtual_path)
-        return extract_nut_dependencies(content) if content else set()
+        # Read raw bytes first — detect compiled Squirrel bytecode (0xFAFA)
+        # that a mod author could ship inside a .nut file.
+        raw = self._read_bytes(node.virtual_path)
+        if raw is None:
+            return set()
+        if raw[:2] == b"\xfa\xfa":
+            logger.debug(
+                "Squirrel bytecode (.cnut) in %s — literal extraction not supported",
+                node.virtual_path,
+            )
+            return set()
+        content = raw.decode("utf-8", errors="replace")
+        return extract_nut_dependencies(content)
 
     def _extract_manifest_deps(self, node) -> set[str]:
         content = self._read_text(node.virtual_path)
@@ -588,6 +625,10 @@ class GraphBuilder:
         content = self._read_bytes(node.virtual_path)
         return extract_nuc_dependencies(content) if content else set()
 
+    def _extract_ani_deps(self, node) -> set[str]:
+        content = self._read_text(node.virtual_path)
+        return extract_ani_dependencies(content) if content else set()
+
     def _extract_kv_sound_deps(self, node) -> set[str]:
         """Extract .wav / .phy references from soundmixers.txt or propdata.txt."""
         content = self._read_text(node.virtual_path)
@@ -631,3 +672,16 @@ class GraphBuilder:
             if vfs.get_active_file(ss_path):
                 graph.add_edges([(path, ss_path)])
                 node.dependencies.add(ss_path)
+
+    def _add_phy_edges(self, graph, vfs) -> None:
+        """Add synthetic .mdl -> .phy edges (by naming convention)."""
+        for node in vfs.get_all_active():
+            if node.is_redundant:
+                continue
+            path = node.virtual_path
+            if not path.lower().endswith(".mdl"):
+                continue
+            phy_path = path[:-4] + ".phy"
+            if vfs.get_active_file(phy_path):
+                graph.add_edges([(path, phy_path)])
+                node.dependencies.add(phy_path)

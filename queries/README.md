@@ -1,7 +1,8 @@
 # Parallelines 预置查询脚本库
 
-> 26 个纯 JSON 查询脚本，通过 `--query` 运行。不需 Python 代码，编译为 EXE 后同样可用。
+> 34 个纯 JSON 查询脚本，通过 `--query` 运行。不需 Python 代码，编译为 EXE 后同样可用。
 > 引擎版本：v2（支持多列 JOIN、θ-连接、图遍历源、跨列比较、条件聚合、多表 JOIN）
+> **注意**：`like` 谓词使用 shell glob 通配符（`*` = 任意字符, `?` = 单字符），非 SQL `%`/`_`。
 
 ## 使用方式
 
@@ -39,7 +40,9 @@ parallelines ... --analyze --query dead_files --yes
 | `dead_by_source.json` | 哪个包的不可达文件最多？ | GROUP BY + WHERE |
 | `redundant_by_source.json` | 哪个包的文件被覆盖最多？ | GROUP BY + WHERE |
 | `entry_point_types.json` | 入口点的类型分布？ | 直接查询 entry_points |
-| `active_vmt_files.json` | 当前生效的 .vmt 材质有哪些？ | `like` 通配符模式匹配 |
+| `map_soundscape_coverage.json` | 哪些地图有对应音景文件？ | `entry_points` + `or` 过滤 soundscape/map |
+| `active_vmt_files.json` | 当前生效的 .vmt 材质有哪些？ | `like` shell glob 模式匹配（用 `*` 非 `%`） |
+| `complete_dead_by_type.json` | 按来源类型统计死文件数量？ | GROUP BY source_type + WHERE is_dead |
 
 ### 冲突类 — 定位具体问题
 
@@ -75,6 +78,17 @@ parallelines ... --analyze --query dead_files --yes
 | 文件 | 回答的问题 | 要点 |
 |------|-----------|------|
 | `map_descendants.json` | 一个地图依赖了哪些 addon 的文件？ | **v2**: `descendants_of` 图源，按来源分组统计 |
+
+### 资源追踪类 — 追踪特定资源在依赖图中的引用链
+
+| 文件 | 回答的问题 | 要点 |
+|------|-----------|------|
+| `sound_chain.json` | 音效依赖链：哪些文件引用了 .wav？ | `dependencies` + `like` 过滤 `sound/*.wav` |
+| `infected_model_usage.json` | 感染者模型引用：哪些入口点引用了 infected 模型？ | `dependencies` + `like` 过滤 `models/infected/*.mdl` |
+| `melee_weapon_chain.json` | 近战武器引用链：melee 脚本引用了哪些 .mdl？ | `dependencies` + AND 组合两个 `like` 谓词 |
+| `particle_coverage.json` | 粒子覆盖：.pcf 文件引用了哪些材质？ | `dependencies` + `like` 过滤 `*.pcf` |
+| `ui_texture_usage.json` | UI 纹理：.res 文件引用了哪些纹理？ | `dependencies` + `like` 过滤 `*.res` |
+| `map_full_audio.json` | 地图完整音效：每个地图引用了哪些 .wav？ | `dependencies` + `like` 过滤 `sound/*.wav` |
 
 ### S9 外部 VPK
 
@@ -159,23 +173,25 @@ parallelines ... --analyze --query '{"select":["*"],"from":"files","joins":[{"ty
 parallelines ... --analyze --query '{"select":["source_name","file_count"],"from":{"descendants_of":"maps/c1m1.bsp"},"group_by":{"by":["source_name"],"agg":{"file_count":"count"}},"limit":20}'
 ```
 
-## 文件清单（26 个）
+## 文件清单（34 个）
 
 ```
-active_vmt_files.json          hash_conflicts.json
-addon_full_profile.json        implicit_deps.json
+active_vmt_files.json          implicit_deps.json
+addon_full_profile.json        infected_model_usage.json
 cascade_overrides.json         isolated_packages.json
-cross_map_pollution.json       map_descendants.json
-dead_by_source.json            missing_deps.json
-dead_files.json                mod_type_summary.json
-dep_conflicts_cross_source.json redundant_by_source.json
-dependency_cycles.json         safe_to_delete.json
-disabled_addons.json           script_mods.json
-entry_point_types.json         top_impact.json
-external_new_files.json
-external_overlap.json
-external_overridden.json
-external_overrides.json
-file_count_by_source.json
+complete_dead_by_type.json     map_descendants.json
+cross_map_pollution.json       map_full_audio.json
+dead_by_source.json            map_soundscape_coverage.json
+dead_files.json                melee_weapon_chain.json
+dep_conflicts_cross_source.json missing_deps.json
+dependency_cycles.json         mod_type_summary.json
+disabled_addons.json           particle_coverage.json
+entry_point_types.json         redundant_by_source.json
+external_new_files.json        safe_to_delete.json
+external_overlap.json          script_mods.json
+external_overridden.json       sound_chain.json
+external_overrides.json        top_impact.json
+file_count_by_source.json      ui_texture_usage.json
 global_scripts.json
+hash_conflicts.json
 ```

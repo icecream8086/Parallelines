@@ -8,6 +8,27 @@ from parallelines.parsers.kv_parser import parse_kv
 logger = logging.getLogger(__name__)
 
 
+def _extract_wave(wave, deps: set[str]) -> None:
+    """Extract a 'wave' entry, handling both string and list forms."""
+    if isinstance(wave, str):
+        deps.add(normalise_sound_path(wave))
+    elif isinstance(wave, list):
+        for w in wave:
+            deps.add(normalise_sound_path(w))
+
+
+def _extract_rndwave(rndwave, deps: set[str]) -> None:
+    """Extract 'rndwave', handling dict, list-of-dicts, and list-of-strings forms."""
+    if isinstance(rndwave, dict):
+        _extract_wave(rndwave.get("wave"), deps)
+    elif isinstance(rndwave, list):
+        for item in rndwave:
+            if isinstance(item, dict):
+                _extract_wave(item.get("wave"), deps)
+            elif isinstance(item, str):
+                deps.add(normalise_sound_path(item))
+
+
 def extract_game_sounds_dependencies(file_content: str) -> set[str]:
     try:
         kv = parse_kv(file_content)
@@ -15,20 +36,8 @@ def extract_game_sounds_dependencies(file_content: str) -> set[str]:
         for sound_name, sound_def in kv.items():
             if not isinstance(sound_def, dict):
                 continue
-            wave = sound_def.get("wave")
-            if isinstance(wave, str):
-                deps.add(normalise_sound_path(wave))
-            elif isinstance(wave, list):
-                for w in wave:
-                    deps.add(normalise_sound_path(w))
-            rndwave = sound_def.get("rndwave")
-            if isinstance(rndwave, dict):
-                wave_list = rndwave.get("wave")
-                if isinstance(wave_list, str):
-                    deps.add(normalise_sound_path(wave_list))
-                elif isinstance(wave_list, list):
-                    for w in wave_list:
-                        deps.add(normalise_sound_path(w))
+            _extract_wave(sound_def.get("wave"), deps)
+            _extract_rndwave(sound_def.get("rndwave"), deps)
         return deps
     except Exception as exc:
         logger.warning("Failed to parse game_sounds: %s", exc)

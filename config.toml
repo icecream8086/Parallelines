@@ -29,6 +29,10 @@ fireaxe_json_path = ""
 parse_addoninfo = true
 addon_state_source = "directory"
 
+[toolchain]
+sq_path = ""
+ice_key = ""     # ICE decryption key; "" = auto-detect per game
+
 [output]
 format = "json"
 output_dir = "./reports"

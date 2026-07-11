@@ -7,16 +7,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    from srctools.mdl import Model
+    from srctools.mdl import AnimEvents, Model
     from srctools.vmt import Material
 
     SRCTOOLS_AVAILABLE = True
 except ImportError:
     SRCTOOLS_AVAILABLE = False
+    AnimEvents = None  # type: ignore[assignment]
     Model = None  # type: ignore[assignment]
     Material = None  # type: ignore[assignment]
 
+from parallelines.parsers import normalise_sound_path
+
 _TEXTURE_KEYS = {"$basetexture", "$bumpmap", "$normalmap"}
+
+# Animation events that reference sound files.
+_SOUND_EVENT_TYPES = frozenset({
+    AnimEvents.AE_CL_PLAYSOUND,
+    AnimEvents.AE_SV_PLAYSOUND,
+    AnimEvents.CL_EVENT_SOUND,
+}) if AnimEvents is not None else frozenset()
 
 
 def _normalise_vtf_path(texture: str) -> str:
@@ -73,5 +83,16 @@ def extract_mdl_dependencies(chain, virtual_path: str) -> set[str]:
             texture = mat.get(key)
             if texture:
                 dependencies.add(_normalise_vtf_path(texture))
+
+    # Extract sound references from animation sequence events (AE_CL_PLAYSOUND, etc.)
+    try:
+        for seq in model.sequences:
+            for event in seq.events:
+                if isinstance(event.type, AnimEvents) and event.type in _SOUND_EVENT_TYPES:
+                    sound = event.options.strip().replace("\\", "/")
+                    if sound:
+                        dependencies.add(normalise_sound_path(sound))
+    except Exception as exc:
+        logger.debug("Failed to extract sound events from mdl '%s': %s", virtual_path, exc)
 
     return dependencies
