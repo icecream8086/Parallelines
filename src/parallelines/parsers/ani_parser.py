@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import re
 
+from parallelines.error_policy import parse_failure
+
 logger = logging.getLogger(__name__)
 
 _ANI_MODEL_RE = re.compile(r'"model"\s+"([^"]+)"', re.IGNORECASE)
@@ -22,5 +24,5 @@ def extract_ani_dependencies(file_content: str) -> set[str]:
                 deps.add(path)
         return deps
     except Exception as exc:
-        logger.warning("Failed to parse .ani: %s", exc)
+        parse_failure(exc, "ani_parser")
         return set()

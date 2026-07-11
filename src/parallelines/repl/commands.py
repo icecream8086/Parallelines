@@ -1,8 +1,11 @@
 """REPL meta-command handlers."""
 from __future__ import annotations
 import json
+import logging
 from pathlib import Path
 from parallelines.engine.store import Relation
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_help(session, args: str) -> bool:
@@ -172,7 +175,7 @@ def cmd_load(session, args: str) -> bool:
         print(f"File not found: {p}")
         return True
     try:
-        data = json.loads(p.read_text("utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
         print(f"Failed to read JSON: {e}")
         return True
@@ -198,7 +201,8 @@ def cmd_load(session, args: str) -> bool:
                 typed_rows = [row_type(**r) for r in rows_data]
                 setattr(store, attr, Relation.from_rows(attr, typed_rows))
                 loaded += 1
-            except Exception:
+            except Exception as e:
+                logger.debug("Schema mismatch for %s: %s", attr, e)
                 skipped.append(attr)
     if skipped:
         print(f"  Warning: skipped {skipped} (schema mismatch)")
@@ -252,10 +256,10 @@ def cmd_unload(session, args: str) -> bool:
 
 def cmd_analyze(session, args: str) -> bool:
     """Re-run the full analysis pipeline, replacing the in-memory store."""
-    from parallelines.cli import _build_store, print_summary_from_store
+    from parallelines.pipeline import build_store, print_summary_from_store
 
     print("Re-running analysis ...")
-    store, _vfs = _build_store(session.config, session.args)
+    store, _vfs = build_store(session.config, session.args)
     if store is None:
         print("Analysis failed.")
         return True

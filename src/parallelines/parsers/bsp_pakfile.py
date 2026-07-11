@@ -7,6 +7,8 @@ import re
 import struct
 import zipfile
 
+from parallelines.error_policy import parse_failure
+
 logger = logging.getLogger(__name__)
 
 # Regexes matching dependency calls in Squirrel (.nut) or CFG scripts.
@@ -59,7 +61,8 @@ def scan_bsp_scripts(file_content: bytes) -> set[str]:
                     continue
                 try:
                     text = zf.read(info.filename).decode("utf-8", errors="replace")
-                except Exception:
+                except Exception as exc:
+                    parse_failure(exc, "bsp_pakfile.decode")
                     continue
 
                 if lower.endswith(".nut"):
@@ -85,6 +88,6 @@ def scan_bsp_scripts(file_content: bytes) -> set[str]:
                         if not raw.startswith("cfg/"):
                             raw = "cfg/" + raw
                         deps.add(raw)
-    except Exception:
-        pass
+    except Exception as exc:
+        parse_failure(exc, "bsp_pakfile.scan_scripts")
     return deps

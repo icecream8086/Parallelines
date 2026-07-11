@@ -10,6 +10,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from parallelines.error_policy import parse_failure
+from parallelines.io import FileReader
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -54,7 +57,7 @@ def parse_addoninfo(content: str) -> dict[str, Any]:
         kv = _Keyvalues.parse(content)
         return _kv_addoninfo_to_dict(kv)
     except Exception as exc:
-        logger.debug("Failed to parse addoninfo.txt: %s", exc)
+        parse_failure(exc, "addoninfo.parse")
         return {}
 
 
@@ -101,7 +104,7 @@ def _kv_addoninfo_to_dict(kv: Any) -> dict[str, Any]:
                     value = str(child.value) if hasattr(child, "value") else ""
                     result[name] = value
     except Exception as exc:
-        logger.debug("Error converting Keyvalues to addoninfo dict: %s", exc)
+        parse_failure(exc, "addoninfo.kv_to_dict")
 
     return result
 
@@ -121,10 +124,10 @@ def parse_addoninfo_file(path: str | Path) -> dict[str, Any]:
         return {}
 
     try:
-        content = path_obj.read_text(encoding="utf-8", errors="replace")
+        content = FileReader.read_game_text(path_obj)
         return parse_addoninfo(content)
     except Exception as exc:
-        logger.debug("Failed to read addoninfo.txt at %s: %s", path, exc)
+        parse_failure(exc, "addoninfo.read_file")
         return {}
 
 
@@ -147,5 +150,5 @@ def extract_dependency_ids(addon_meta: dict[str, Any]) -> list[str]:
                     if wid:
                         dep_ids.append(str(wid))
     except Exception as exc:
-        logger.debug("Failed to extract dependency IDs: %s", exc)
+        parse_failure(exc, "addoninfo.extract_dep_ids")
     return dep_ids

@@ -7,6 +7,8 @@ opening VPKs or filesystem chains.
 
 from __future__ import annotations
 
+from parallelines.error_policy import parse_failure
+
 # Existing parsers (always available).
 from parallelines.parsers.vmt_parser import extract_vmt_dependencies
 from parallelines.parsers.nut_parser import extract_nut_dependencies
@@ -221,7 +223,8 @@ def extract_deps_worker(task: tuple) -> list[tuple[str, list[str]]]:
             deps = _dispatch_parse(virtual_path, ext, content)
             if deps:
                 results.append((virtual_path, list(deps)))
-        except Exception:
+        except Exception as exc:
+            parse_failure(exc, "worker.extract_deps")
             continue
     return results
 

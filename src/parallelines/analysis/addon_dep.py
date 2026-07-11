@@ -8,6 +8,7 @@ from typing import Any
 from parallelines.analysis.base import Analyzer
 from parallelines.engine import Relation, ResultStore
 from parallelines.engine.schema import DepConflictRow
+from parallelines.error_policy import parse_failure
 from parallelines.parsers.addoninfo import extract_dependency_ids, parse_addoninfo
 
 logger = logging.getLogger(__name__)
@@ -117,8 +118,8 @@ class AddonDependencyAnalyzer(Analyzer):
         try:
             file_obj = self.chain[node.virtual_path]
             content = file_obj.open_str().read()
-        except Exception:
-            logger.debug("Failed to read %s via chain", node.virtual_path)
+        except Exception as exc:
+            parse_failure(exc, "addon_dep.read_chain")
             return []
 
         meta = parse_addoninfo(content)

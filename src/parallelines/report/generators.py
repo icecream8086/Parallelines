@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 from parallelines.engine import ResultStore
+from parallelines.i18n import _
+from parallelines.io import FileWriter
 
 
 def generate_report_from_store(
@@ -40,7 +42,7 @@ def generate_report_from_store(
 def _write_json(data: dict, path: Path) -> None:
     """Write dict data as JSON."""
     text = json.dumps(data, indent=2, ensure_ascii=False)
-    path.write_text(text, encoding="utf-8")
+    FileWriter.write_text(path, text)
 
 
 def _write_text_from_store(store: ResultStore, path: Path) -> None:
@@ -64,7 +66,7 @@ def _write_text_from_store(store: ResultStore, path: Path) -> None:
             )
         lines.append(table.get_string())
         lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    FileWriter.write_text(path, "\n".join(lines))
 
 
 def _write_csv_from_store(store: ResultStore, path: Path) -> None:
@@ -85,7 +87,7 @@ def _write_csv_from_store(store: ResultStore, path: Path) -> None:
                 ]
             )
         buffer.write("\n")
-    path.write_text(buffer.getvalue(), encoding="utf-8")
+    FileWriter.write_text(path, buffer.getvalue())
 
 
 def _write_html_from_store(store: ResultStore, path: Path) -> None:
@@ -97,7 +99,7 @@ def _write_html_from_store(store: ResultStore, path: Path) -> None:
         "table{border-collapse:collapse;margin:1em 0;width:100%}",
         "th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}",
         "th{background:#f5f5f5}</style></head><body>",
-        "<h1>Parallelines Analysis Report</h1>",
+        f"<h1>{_('report.title')}</h1>",
     ]
     for rel_name in ("files", "hash_conflicts", "dep_conflicts", "isolated", "impact"):
         rel = getattr(store, rel_name, None)
@@ -115,4 +117,4 @@ def _write_html_from_store(store: ResultStore, path: Path) -> None:
             lines.append("</tr>")
         lines.append("</tbody></table>")
     lines.append("</body></html>")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    FileWriter.write_text(path, "\n".join(lines))

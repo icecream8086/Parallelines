@@ -36,8 +36,8 @@ def build_completer(store: ResultStore | None = None):
             if getattr(store, attr, None) is not None:
                 words.append(attr)
     try:
-        from parallelines.cli import _find_queries_dir
-        qdir = _find_queries_dir()
+        from parallelines.query_cli import find_queries_dir
+        qdir = find_queries_dir()
         if qdir.is_dir():
             for p in qdir.glob("*.json"):
                 if p.name != "README.md":

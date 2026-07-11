@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import locale
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ ZH: dict[str, str] = {
     "graph.ready": "图就绪: {nodes} 节点, {edges} 条边",
     "report.saved": "报告已保存到 {path}",
     "report.summary": "分析摘要",
+    "report.title": "Parallelines 分析报告",
+    "report.analyzer": "分析器",
     "report.issues": "问题",
     "report.status": "状态",
     "report.ok": "正常",
@@ -45,14 +48,16 @@ ZH: dict[str, str] = {
     "external.new_files": "新文件",
     "error.interrupted": "用户中断 (Ctrl+C)",
     "error.unexpected": "意外错误: {msg}",
-    "tui.dashboard": "仪表盘",
-    "tui.analysis": "分析",
-    "tui.report": "报告",
-    "tui.settings": "设置",
-    "tui.load_report": "加载报告",
-    "tui.run_analysis": "运行分析",
     "lang.current": "当前语言: {lang}",
     "lang.switch": "切换语言",
+    "pipeline.cold_boot.title": "冷启动模式 -- 需要读取所有 VPK 文件内容",
+    "pipeline.cold_boot.no_cache": "--no-cache 已指定，将跳过 SSD 缓存重建依赖图。",
+    "pipeline.cold_boot.first_run": "这是首次运行（或缓存已失效），需要解析 VPK 文件。",
+    "pipeline.cold_boot.eta": "预计耗时：2–3 分钟，期间磁盘 I/O 会很高。",
+    "pipeline.cold_boot.hint": "如果已有缓存，去掉 --no-cache 即可秒级启动。",
+    "pipeline.cold_boot.confirm": "确认继续？[y/N] ",
+    "pipeline.cold_boot.cancelled": "已取消。",
+    "pipeline.cold_boot.skip_hint": "使用 --yes 跳过此提示。",
 }
 
 EN: dict[str, str] = {
@@ -75,6 +80,8 @@ EN: dict[str, str] = {
     "graph.ready": "Graph ready: {nodes} nodes, {edges} edges",
     "report.saved": "Report saved to {path}",
     "report.summary": "Analysis Summary",
+    "report.title": "Parallelines Analysis Report",
+    "report.analyzer": "Analyzer",
     "report.issues": "Issues",
     "report.status": "Status",
     "report.ok": "OK",
@@ -85,14 +92,16 @@ EN: dict[str, str] = {
     "external.new_files": "New Files",
     "error.interrupted": "Interrupted by user (Ctrl+C)",
     "error.unexpected": "Unexpected error: {msg}",
-    "tui.dashboard": "Dashboard",
-    "tui.analysis": "Analysis",
-    "tui.report": "Report",
-    "tui.settings": "Settings",
-    "tui.load_report": "Load Report",
-    "tui.run_analysis": "Run Analysis",
     "lang.current": "Current language: {lang}",
     "lang.switch": "Switch Language",
+    "pipeline.cold_boot.title": "Cold boot mode — needs to read all VPK files",
+    "pipeline.cold_boot.no_cache": "--no-cache specified, will skip SSD cache and rebuild dependency graph.",
+    "pipeline.cold_boot.first_run": "First run (or cache invalidated), need to parse VPK files.",
+    "pipeline.cold_boot.eta": "Estimated time: 2–3 minutes, disk I/O will be heavy.",
+    "pipeline.cold_boot.hint": "If a cache exists, drop --no-cache for near-instant startup.",
+    "pipeline.cold_boot.confirm": "Continue? [y/N] ",
+    "pipeline.cold_boot.cancelled": "Cancelled.",
+    "pipeline.cold_boot.skip_hint": "Use --yes to skip this prompt.",
 }
 
 _TRANSLATIONS: dict[str, dict[str, str]] = {"zh": ZH, "en": EN}
@@ -100,10 +109,34 @@ _CURRENT: str = ""
 
 
 def _detect() -> str:
+    # Try locale module first (preferred, works when locale is properly set).
     try:
-        code, _ = locale.getdefaultlocale()
-        if code and code.startswith("zh"):
-            return "zh"
+        loc = locale.getlocale()
+        if loc and loc[0]:
+            code = loc[0].replace("_", "").lower()
+            if code.startswith("zh"):
+                return "zh"
+    except Exception:
+        pass
+    # Fallback to LCID / OS language query (works in frozen PyInstaller exe
+    # where locale module may return (None, None)).
+    try:
+        import ctypes
+        windll = ctypes.windll.kernel32
+        # LOCALE_SISO639LANGNAME (0x59) -> "zh", "en", etc.
+        buf = ctypes.create_unicode_buffer(32)
+        if windll.GetLocaleInfoW(0x400, 0x59, buf, 32):  # 0x400 = LOCALE_USER_DEFAULT
+            lang = buf.value.strip().lower()
+            if lang.startswith("zh"):
+                return "zh"
+    except Exception:
+        pass
+    # Last resort: check common Windows environment variables.
+    try:
+        for var in ("LANG", "LC_ALL"):
+            val = os.environ.get(var, "")
+            if val.lower().startswith("zh"):
+                return "zh"
     except Exception:
         pass
     return "en"

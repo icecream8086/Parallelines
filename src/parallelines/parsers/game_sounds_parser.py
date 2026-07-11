@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+from parallelines.error_policy import parse_failure
 from parallelines.parsers import normalise_sound_path
 from parallelines.parsers.kv_parser import parse_kv
 
@@ -40,5 +41,5 @@ def extract_game_sounds_dependencies(file_content: str) -> set[str]:
             _extract_rndwave(sound_def.get("rndwave"), deps)
         return deps
     except Exception as exc:
-        logger.warning("Failed to parse game_sounds: %s", exc)
+        parse_failure(exc, "game_sounds_parser")
         return set()

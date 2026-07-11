@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+from parallelines.error_policy import parse_failure
+
 _SHOULD_CHECK = os.environ.get("PARALLELINES_NO_CONTRACTS", "").lower() not in ("1", "true", "yes")
 
 if _SHOULD_CHECK:
@@ -62,10 +64,14 @@ class DependencyGraph:
     @_ensure(lambda result, node: node not in result)
     def get_descendants(self, node: str) -> set[str]:
         """Return all nodes reachable from *node* via directed edges."""
+        if node not in self._graph:
+            return set()
         return nx.descendants(self._graph, node)
 
     def get_ancestors(self, node: str) -> set[str]:
         """Return all nodes that can reach *node* via directed edges."""
+        if node not in self._graph:
+            return set()
         return nx.ancestors(self._graph, node)
 
     def has_path(self, source: str, target: str) -> bool:
@@ -85,7 +91,8 @@ class DependencyGraph:
                 continue
             try:
                 result |= nx.descendants(self._graph, source)
-            except Exception:
+            except Exception as exc:
+                parse_failure(exc, "deps.lock_node")
                 continue
         return result
 

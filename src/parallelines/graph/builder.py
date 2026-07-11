@@ -15,7 +15,12 @@ import logging
 import time
 from pathlib import Path
 
+from tqdm import tqdm
+
+from parallelines.error_policy import parse_failure
 from parallelines.graph.deps import DependencyGraph
+from parallelines.i18n import _
+from parallelines.io import FileReader
 from parallelines.parsers.manifest_parser import is_manifest_path
 from parallelines.parsers.vmt_parser import extract_vmt_dependencies
 
@@ -200,7 +205,12 @@ class GraphBuilder:
         t0 = time.perf_counter()
         graph = DependencyGraph()
 
-        for node in self.vfs.get_all_active():
+        for node in tqdm(
+            list(self.vfs.get_all_active()),
+            desc=_("graph.building"),
+            unit="files",
+            disable=None,  # auto-detect terminal
+        ):
             # Safety guard: skip any residual redundant nodes
             if node.is_redundant:
                 continue
@@ -518,7 +528,7 @@ class GraphBuilder:
                 deps.add(stripped)
             return deps
         except Exception as exc:
-            logger.warning("Failed to parse manifest %s: %s", node.virtual_path, exc)
+            parse_failure(exc, "builder.parse_manifest")
             return set()
 
     def _extract_bsp_deps(self, node) -> set[str]:
@@ -531,8 +541,8 @@ class GraphBuilder:
                 if bsp_data:
                     script_deps = scan_bsp_scripts(bsp_data)
                     deps |= script_deps
-            except Exception:
-                pass
+            except Exception as exc:
+                parse_failure(exc, "builder.read_bsp_pakfile")
         return deps
 
     # ------------------------------------------------------------------
@@ -548,8 +558,9 @@ class GraphBuilder:
             return None
         try:
             file_obj = self.chain[virtual_path]
-            return file_obj.open_str().read()
-        except Exception:
+            return FileReader.read_vfs_text(file_obj)
+        except Exception as exc:
+            parse_failure(exc, "builder.read_text")
             return None
 
     def _read_bytes(self, virtual_path: str) -> bytes | None:
@@ -558,8 +569,9 @@ class GraphBuilder:
             return None
         try:
             file_obj = self.chain[virtual_path]
-            return file_obj.open_bin().read()
-        except Exception:
+            return FileReader.read_vfs_bytes(file_obj)
+        except Exception as exc:
+            parse_failure(exc, "builder.read_binary")
             return None
 
     # ------------------------------------------------------------------

@@ -3,6 +3,8 @@
 from __future__ import annotations
 import logging
 
+from parallelines.error_policy import parse_failure
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,5 +24,6 @@ def extract_texture_list_dependencies(file_content: str) -> set[str]:
                     p = "materials/" + p
                 deps.add(p)
         return deps
-    except Exception:
+    except Exception as exc:
+        parse_failure(exc, "extract_texture_list_dependencies")
         return set()

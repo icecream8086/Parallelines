@@ -22,7 +22,7 @@ class TestConfig(unittest.TestCase):
         # GeneralConfig defaults
         self.assertEqual(config.general.game, "")
         self.assertEqual(config.general.game_root, "")
-        self.assertEqual(config.general.cache_dir, "./cache")
+        self.assertEqual(config.general.cache_dir, "")  # resolved at use via default_cache_dir()
         self.assertTrue(config.general.enable_cache)
         self.assertEqual(config.general.cache_strategy, "mtime")
         self.assertEqual(config.general.num_workers, 0)
@@ -93,7 +93,7 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(config.analysis.compute_impact)
         self.assertEqual(config.output.format, "csv")
         # Unset fields should retain defaults
-        self.assertEqual(config.general.cache_dir, "./cache")
+        self.assertEqual(config.general.cache_dir, "")  # "" = deferred to default_cache_dir()
 
     def test_merge_unknown_section_ignored(self) -> None:
         """Unknown sections in TOML data should be silently ignored."""

@@ -73,10 +73,12 @@ class TestGameinfoParser(unittest.TestCase):
         # The _kv_to_dict lowercases keys, so look for "filesystem"
         self.assertIn("filesystem", filesystem)
         fs = filesystem["filesystem"]
-        # With srctools 2.7+, nested lists are stringified, so fs is a str
-        self.assertIsInstance(fs, str)
-        self.assertIn("SearchPaths", fs)
-        self.assertIn("|gameinfo_path|.", fs)
+        # With the fixed _kv_list_to_dicts, nested blocks are now dicts
+        self.assertIsInstance(fs, dict)
+        self.assertIn("searchpaths", fs)
+        sp = fs["searchpaths"]
+        self.assertIn("game", sp)
+        self.assertEqual(sp["game"], "|gameinfo_path|.")
 
 
 @unittest.skipIf(not SRCTOOLS_AVAILABLE, "srctools not installed")

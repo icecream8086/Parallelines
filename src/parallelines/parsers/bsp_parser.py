@@ -7,6 +7,8 @@ import os
 import re
 import tempfile
 
+from parallelines.error_policy import parse_failure
+
 logger = logging.getLogger(__name__)
 
 # Matches ``exec`` calls within console commands.
@@ -77,7 +79,7 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
                 dependencies.add(exec_target)
 
     except Exception as exc:
-        logger.debug("Failed to parse bsp '%s': %s", virtual_path, exc)
+        parse_failure(exc, "bsp_parser.extract_deps")
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -115,5 +117,5 @@ def extract_bsp_entity_side_effects(bsp) -> dict[str, list[str]]:
                 if gs:
                     effects["globalstates"].append(gs)
     except Exception as exc:
-        logger.debug("Entity extraction failed: %s", exc)
+        parse_failure(exc, "bsp_parser.entity_extract")
     return effects

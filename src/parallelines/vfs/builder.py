@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from parallelines.cache.manager import CacheManager
+from parallelines.config import default_cache_dir
 
 try:
     import pandas as pd
@@ -19,14 +20,16 @@ except ImportError:
 from parallelines.config import AppConfig, load_config
 from parallelines.exceptions import ParseError
 from parallelines.game_strategy import get_strategy
+from parallelines.io import FileReader
 from parallelines.parsers.gameinfo import (
-    parse_gameinfo,
-    extract_search_paths,
-    extract_all_game_dirs,
     extract_addon_roots,
+    extract_all_game_dirs,
+    extract_search_paths,
+    parse_gameinfo,
 )
 from parallelines.parsers.vpk_parser import parse_vpk_index
 from parallelines.types import FileNode
+from parallelines.vfs.addon_prioritizer import AddonPrioritizer
 from parallelines.vfs.filesystem import VirtualFileSystem
 
 try:
@@ -93,8 +96,9 @@ class VfsBuilder:
 
         self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
         self.source_paths: dict[str, str] = {}
+        self.failed_vpk_count: int = 0
 
-        cache_dir = self.config.general.cache_dir or "./cache"
+        cache_dir = self.config.general.cache_dir or default_cache_dir()
         self._cache = CacheManager(Path(cache_dir))
         self._cache_hit = False
         self.debug = (
@@ -316,36 +320,16 @@ class VfsBuilder:
                     vpk_queue.append((str(vpk_file), vpk_file.name, -1000, True))
                     self.source_paths[vpk_file.name] = str(vpk_file)
 
-        # Sort addon VPKs in two groups with opposite ordering semantics:
-        #   - addonlist items:  first in list  = highest priority  (ascending order)
-        #   - non-addonlist:    last (alpha)    = highest priority  (descending = reverse
-        #     alpha) because the engine mounts alphabetically then AddToHead-prepends
-        #     each one, so the last-discovered VPK ends up at the front of the search path.
-        addonlist_items = [x for x in addon_vpks if x[3] is not None]
-        non_items = [x for x in addon_vpks if x[3] is None]
-
-        addonlist_items.sort(key=lambda x: x[3])  # by addonlist line order
-
-        if self.strategy.priority_direction == "descending":
-            non_items.sort(key=lambda x: x[0].name.lower(), reverse=True)
-        else:
-            non_items.sort(key=lambda x: x[0].name.lower())
-
-        addon_vpks_sorted = addonlist_items + non_items
-
-        # Assign priorities according to strategy direction
-        if self.strategy.priority_direction == "descending":
-            total = len(addon_vpks_sorted)
-            for idx, (vpk_path, is_disabled, _from_ws, _order) in enumerate(addon_vpks_sorted):
-                priority = 1000 + (total - idx)
-                vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
-                self.source_paths[vpk_path.name] = str(vpk_path)
-        else:
-            priority = 1000
-            for vpk_path, is_disabled, _from_ws, _order in addon_vpks_sorted:
-                vpk_queue.append((str(vpk_path), vpk_path.name, priority, is_disabled))
-                self.source_paths[vpk_path.name] = str(vpk_path)
-                priority -= 1
+        # Sort addon VPKs and assign priorities (delegated to AddonPrioritizer)
+        prioritizer = AddonPrioritizer(
+            priority_direction=self.strategy.priority_direction,
+            addonlist=addonlist,
+        )
+        for path_str, name, priority, is_disabled in prioritizer.sort_and_assign(
+            addon_vpks
+        ):
+            vpk_queue.append((path_str, name, priority, is_disabled))
+            self.source_paths[name] = path_str
 
         if self.debug:
             logger.debug("Found %d VPK(s) to parse", len(vpk_queue))
@@ -362,24 +346,32 @@ class VfsBuilder:
 
         VPKs not listed default to enabled.
         Smaller ``line_order`` = higher priority (listed first).
+
+        Note: The file uses tab-separated columns; VPK names may contain spaces
+        (e.g. ``"my cool addon.vpk"\t\t"1"``), so the parser splits on tabs
+        rather than whitespace to avoid truncating names.
         """
         addonlist_path = self.game_root / self.strategy.addonlist_path
         result: dict[str, tuple[bool, int]] = {}
         if not addonlist_path.is_file():
             return result
         try:
-            lines = addonlist_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            text = FileReader.read_game_text(addonlist_path)
+            # strip UTF-8 BOM (﻿) so it doesn't pollute VPK names
+            if text.startswith("﻿"):
+                text = text[1:]
+            lines = text.splitlines()
             order = 0
             for line in lines:
                 stripped = line.strip()
                 if not stripped:
                     continue
-                # Format: "vpk_name"  "1"  or  "workshop\\123.vpk"  "0"
-                parts = stripped.replace("\t", " ").split()
-                if len(parts) >= 2:
-                    name = parts[0].strip('"').replace("\\", "/")
+                # Split on tab to preserve spaces within quoted VPK names.
+                fields = [f.strip('" ') for f in stripped.split("\t") if f.strip('" ')]
+                if len(fields) >= 2:
+                    name = fields[0].replace("\\", "/")
                     vpk_name = name.split("/")[-1] if "/" in name else name
-                    enabled = parts[1].strip('"') == "1"
+                    enabled = fields[-1] == "1"
                     result[vpk_name] = (enabled, order)
                     order += 1
         except Exception as exc:
@@ -638,19 +630,24 @@ class VfsBuilder:
         vpk_path: Path,
         priority: int,
         is_disabled_addon: bool = False,
-    ) -> None:
-        """Parse a single VPK and add all its files to the VFS."""
+    ) -> bool:
+        """Parse a single VPK and add all its files to the VFS.
+
+        Returns:
+            True if the VPK was parsed successfully, False otherwise.
+        """
         try:
             entries = parse_vpk_index(vpk_path)
         except ParseError as exc:
             logger.warning("Skipping VPK %s: %s", vpk_path.name, exc)
-            return
+            return False
 
         source_name = vpk_path.name
         self._add_vpk_entries(
             vfs, source_name, priority, entries, is_disabled_addon=is_disabled_addon
         )
         logger.debug("Ingested %s: %d files", source_name, len(entries))
+        return True
 
     def _add_vpk_entries(
         self,
@@ -698,6 +695,7 @@ class VfsBuilder:
             return
 
         use_parallel = self.num_workers != 1 and len(vpk_queue) >= 3
+        self.failed_vpk_count = 0
 
         if use_parallel:
             from multiprocessing import Pool
@@ -709,21 +707,20 @@ class VfsBuilder:
                 n if n is not None else "auto",
             )
             with Pool(n) as pool:
-                failed_count = 0
                 for name, priority, entries, error, is_disabled in pool.imap_unordered(
                     _parse_vpk_worker, vpk_queue
                 ):
                     if error:
                         logger.warning("Failed to parse VPK %s: %s", name, error)
-                        failed_count += 1
+                        self.failed_vpk_count += 1
                     if entries:
                         self._add_vpk_entries(
                             vfs, name, priority, entries, is_disabled_addon=is_disabled
                         )
-                if failed_count:
+                if self.failed_vpk_count:
                     logger.warning(
                         "%d VPK(s) failed to parse during parallel ingestion",
-                        failed_count,
+                        self.failed_vpk_count,
                     )
         else:
             if HAS_TQDM:
@@ -733,9 +730,11 @@ class VfsBuilder:
             else:
                 vpk_iter = vpk_queue
             for path_str, _name, priority, is_disabled in vpk_iter:
-                self._ingest_vpk(
+                ok = self._ingest_vpk(
                     vfs, Path(path_str), priority, is_disabled_addon=is_disabled
                 )
+                if not ok:
+                    self.failed_vpk_count += 1
 
     def _scan_directory(
         self,

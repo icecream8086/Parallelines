@@ -57,9 +57,6 @@ def _pyinstaller(*extra_args: str, name: str = "parallelines", minimal: bool = F
         "tensorflow",
         # pyarrow optional modules (heavy, rarely used)
         "pyarrow.flight", "pyarrow.gandiva", "pyarrow.parquet.encryption",
-        # textual — TUI disabled, pulling it in triggers pyexpat DLL load chain
-        # via plistlib → xml.parsers.expat on some dependency paths.
-        "textual", "textual.devtools",
     ]
 
     args = [

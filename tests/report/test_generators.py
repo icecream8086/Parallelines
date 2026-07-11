@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from parallelines.engine import FileRow, HashConflictRow, Relation, ResultStore
+from parallelines.i18n import detect_language, set_language
 from parallelines.report.generators import generate_report_from_store
 
 
@@ -99,7 +100,12 @@ class TestReportGenerators(unittest.TestCase):
 
     def test_html_output(self) -> None:
         """Generate HTML report and verify it contains expected tables."""
-        out_path = generate_report_from_store(self.store, "html", self.output_dir)
+        prev_lang = detect_language()
+        set_language("en")
+        try:
+            out_path = generate_report_from_store(self.store, "html", self.output_dir)
+        finally:
+            set_language(prev_lang)
 
         self.assertTrue(out_path.exists())
         self.assertEqual(out_path.suffix, ".html")

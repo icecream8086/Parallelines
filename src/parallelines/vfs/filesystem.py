@@ -36,10 +36,13 @@ class VirtualFileSystem:
     def add_file(self, node: FileNode) -> None:
         """Add a FileNode to the pool.
 
-        The node is stored under its virtual_path. It will be considered during
-        the next call to :meth:`resolve`.
+        The node is stored under its virtual_path with path separators normalised
+        to forward slashes (``/``) and case lowered, so that paths differing only
+        in ``/`` vs ``\\`` or character case map to the same key.  The node's own
+        ``virtual_path`` attribute is left unchanged.
         """
-        self._files.setdefault(node.virtual_path, []).append(node)
+        key = node.virtual_path.replace("\\", "/").lower()
+        self._files.setdefault(key, []).append(node)
 
     @_ensure(lambda self: len(self._active) <= sum(len(v) for v in self._files.values()))
     def resolve(self) -> None:
@@ -67,8 +70,9 @@ class VirtualFileSystem:
 
     def get_active_file(self, virtual_path: str) -> FileNode | None:
         """Return the active FileNode for a virtual path, or None if no active file exists."""
-        result = self._active.get(virtual_path)
-        assert result is None or result.virtual_path == virtual_path
+        key = virtual_path.replace("\\", "/").lower()
+        result = self._active.get(key)
+        assert result is None or result.virtual_path.replace("\\", "/").lower() == key
         return result
 
     def get_all_active(self) -> list[FileNode]:

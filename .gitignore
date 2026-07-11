@@ -51,3 +51,7 @@ devdocs
 audit_report.json
 
 /bin/
+
+*.vpk
+
+/issues/

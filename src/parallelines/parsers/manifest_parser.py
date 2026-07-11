@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from parallelines.error_policy import parse_failure
 from parallelines.exceptions import ParseError
+from parallelines.io import FileReader
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +27,15 @@ def parse_manifest(manifest_path: str | Path) -> list[str]:
     """
     try:
         path_obj = Path(manifest_path)
+        content = FileReader.read_game_text(path_obj)
         lines: list[str] = []
-
-        with path_obj.open("r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                if stripped.startswith("//") or stripped.startswith("#"):
-                    continue
-                lines.append(stripped)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("//") or stripped.startswith("#"):
+                continue
+            lines.append(stripped)
 
         return lines
 
@@ -59,5 +60,6 @@ def is_manifest_path(path: str) -> bool:
     try:
         lower = path.lower()
         return "manifest" in lower and lower.endswith(".txt")
-    except Exception:
+    except Exception as exc:
+        parse_failure(exc, "is_manifest_path")
         return False

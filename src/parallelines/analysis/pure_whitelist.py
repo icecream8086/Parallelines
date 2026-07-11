@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
+from parallelines.io import FileReader
 from parallelines.types import FileNode
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ def load_pure_whitelist(path: str | Path) -> set[str]:
 
     patterns: set[str] = set()
     try:
-        text = path_obj.read_text(encoding="utf-8", errors="replace")
+        text = FileReader.read_game_text(path_obj)
         for line in text.splitlines():
             line = line.strip()
 
@@ -124,15 +125,16 @@ def filter_vfs_by_whitelist(
     if "**" in patterns:
         return list(files)
 
+    files_list = list(files)
     result: list[FileNode] = []
-    for node in files:
+    for node in files_list:
         if match_whitelist(node.virtual_path, patterns):
             result.append(node)
 
     logger.debug(
         "Whitelist filter: %d / %d files matched",
         len(result),
-        len(list(files)),
+        len(files_list),
     )
     return result
 

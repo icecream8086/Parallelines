@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from parallelines.error_policy import parse_failure
 from parallelines.game_strategy import GameStrategy, get_strategy
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,8 @@ def _read_manifest_content(chain, manifest_path: str) -> list[str]:
     try:
         file_obj = chain[manifest_path]
         content = file_obj.open_str().read()
-    except Exception:
+    except Exception as exc:
+        parse_failure(exc, "entry_points.read_file")
         return []
 
     lines: list[str] = []
@@ -79,7 +81,7 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
     try:
         active_files = vfs.get_all_active()
     except Exception:
-        logger.exception("discover_entry_points: failed to get all active files")
+        parse_failure(exc, "entry_points.discover")
         return set()
 
     if not active_files:

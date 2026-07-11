@@ -5,7 +5,8 @@ import time
 import traceback
 from pathlib import Path
 
-from parallelines.cli import _build_store, _resolve_query, print_summary_from_store
+from parallelines.pipeline import build_store, print_summary_from_store
+from parallelines.query_cli import resolve_query
 from parallelines.config import AppConfig
 from parallelines.engine.query_parser import QueryParseError
 from parallelines.engine.query_validator import QueryValidationError
@@ -37,7 +38,7 @@ class ReplSession:
     # ── lifecycle ──────────────────────────────────────────
 
     def run(self) -> int:
-        store, _vfs = _build_store(self.config, self.args)
+        store, _vfs = build_store(self.config, self.args)
         if store is None:
             return 1
         self.store = store
@@ -120,7 +121,7 @@ class ReplSession:
             return True
         try:
             t0 = time.perf_counter()
-            qd = _resolve_query(line)
+            qd = resolve_query(line)
             if self.echo_enabled:
                 print(f"Query: {json.dumps(qd)}")
             result = self.store.execute(qd)

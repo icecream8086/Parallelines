@@ -5,6 +5,7 @@ from __future__ import annotations
 from parallelines.analysis.base import Analyzer
 from parallelines.engine import Relation, ResultStore
 from parallelines.engine.schema import ImpactRow
+from parallelines.error_policy import parse_failure
 
 
 class ImpactAnalyzer(Analyzer):
@@ -34,7 +35,8 @@ class ImpactAnalyzer(Analyzer):
         for node in vfs.get_all_active():
             try:
                 count = len(graph.get_descendants(node.virtual_path))
-            except Exception:
+            except Exception as exc:
+                parse_failure(exc, "impact.transitive_closure")
                 count = 0
 
             rows.append(

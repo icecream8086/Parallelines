@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from parallelines.cache.strategies import CacheStrategy, MtimeStrategy
+from parallelines.error_policy import cache_write_failure
+from parallelines.io import FileReader, FileWriter
+
+logger = logging.getLogger(__name__)
 
 try:
     import pandas as pd
@@ -57,9 +62,8 @@ class CacheManager:
             return False
 
         try:
-            with open(meta_path) as f:
-                cache_meta: dict = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            cache_meta: dict = FileReader.read_json(meta_path)
+        except (json.JSONDecodeError, OSError, FileNotFoundError):
             return False
 
         # Check parser version — invalidate when parsers have changed.
@@ -71,11 +75,10 @@ class CacheManager:
 
         current_state: dict = {}
         for vpk in vpk_list:
-            key = (
-                vpk.get("source_name")
-                or vpk.get("name")
-                or vpk.get("path", "")
-            )
+            # Use full path as primary key — name alone collides when the same
+            # VPK file name appears in multiple directories (e.g. pak01_dir.vpk
+            # in both left4dead2/ and hl2/).
+            key = vpk.get("path") or vpk.get("source_name") or vpk.get("name", "")
             current_state[key] = vpk
 
         return self.strategy.is_valid(cached_entries, current_state)
@@ -137,12 +140,12 @@ class CacheManager:
             files_df.to_parquet(self.cache_dir / "all_files.parquet")
             if edges_df is not None:
                 edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
-        except Exception:
+        except Exception as exc:
+            cache_write_failure(exc)
             return
         meta["parser_version"] = self.PARSER_VERSION
         meta_path = self.cache_dir / "meta.json"
-        with open(meta_path, "w") as f:
-            json.dump(meta, f)
+        FileWriter.write_json(meta_path, meta)
 
     def save_edges(self, edges_df) -> None:
         """Update only the ``dependencies.parquet`` cache file.
@@ -155,7 +158,8 @@ class CacheManager:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         try:
             edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
-        except Exception:
+        except Exception as exc:
+            cache_write_failure(exc)
             return
 
     def invalidate(self) -> None:

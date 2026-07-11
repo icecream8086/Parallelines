@@ -21,7 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from parallelines.cli import _build_store, _main, build_parser
+from parallelines.cli import _main, build_parser
+from parallelines.pipeline import build_store
 from parallelines.config import AppConfig
 from parallelines.repl.session import ReplSession
 
@@ -525,7 +526,7 @@ class TestValidateAll:
 #  Bug:  --repl --no-cache without --yes triggers raw input() in
 #        _build_store.  In non-TTY stdin, EOFError causes exit(1).
 #
-#  Root cause: _build_store() uses builtins.input() for cold-build
+#  Root cause: build_store() uses builtins.input() for cold-build
 #  confirmation, which is incompatible with REPL mode and blocks
 #  in non-TTY environments.
 #
@@ -551,7 +552,7 @@ class TestB19ReplColdStartDeadlock:
 
         with patch.object(Path, "exists", return_value=True):
             with patch.object(builtins, "input", side_effect=EOFError):
-                store, vfs = _build_store(config, args)
+                store, vfs = build_store(config, args)
 
         assert store is None
         assert vfs is None
@@ -568,7 +569,7 @@ class TestB19ReplColdStartDeadlock:
 
         with patch.object(Path, "exists", return_value=True):
             with patch.object(builtins, "input", side_effect=KeyboardInterrupt):
-                store, vfs = _build_store(config, args)
+                store, vfs = build_store(config, args)
 
         assert store is None
         assert vfs is None
@@ -593,28 +594,28 @@ class TestB19ReplColdStartDeadlock:
         mock_vfs.get_all_files.return_value = []
 
         with patch.object(Path, "exists", return_value=True):
-            with patch("parallelines.vfs.builder.VfsBuilder") as MockVfsBuilder:
+            with patch("parallelines.pipeline.VfsBuilder") as MockVfsBuilder:
                 mock_builder = MockVfsBuilder.return_value
                 mock_builder.build.return_value = mock_vfs
                 mock_builder.cache_hit = False
                 mock_builder.cache_size.return_value = "0 B"
                 mock_builder.get_chain.return_value = None
 
-                with patch("parallelines.graph.builder.GraphBuilder") as MockGraphBuilder:
+                with patch("parallelines.pipeline.GraphBuilder") as MockGraphBuilder:  # type: ignore[var-annotated]
                     mock_graph = MagicMock()
                     mock_graph.node_count = 0
                     mock_graph.edge_count = 0
                     MockGraphBuilder.build_from_cached.return_value = mock_graph
 
-                    with patch("parallelines.cli.ResultStore") as MockResultStore:
+                    with patch("parallelines.pipeline.ResultStore") as MockResultStore:
                         mock_store = MagicMock()
                         MockResultStore.from_analysis.return_value = mock_store
 
                         with patch(
-                            "parallelines.analysis.entry_points.discover_entry_points",
+                            "parallelines.pipeline.discover_entry_points",
                             return_value=set(),
                         ):
-                            store, vfs = _build_store(config, args)
+                            store, vfs = build_store(config, args)
 
         # With --yes we proceed past the prompt and build the store.
         # Since we mocked all dependencies, we should get a non-None result.
@@ -721,9 +722,9 @@ class TestB20SvPureReplIneffective:
 #
 #  Bug:  --external x.vpk --sv-pure whitelist.txt → sv-pure whitelist
 #        filtering is only applied inside cmd_analyze() (cli.py lines 807-828).
-#        cmd_external() calls _build_store() but never enters cmd_analyze().
+#        cmd_external() calls build_store() but never enters cmd_analyze().
 #
-#  Root cause: same as B20 — sv-pure logic is not in the shared _build_store()
+#  Root cause: same as B20 — sv-pure logic is not in the shared build_store()
 #  pipeline.  It was added only to the --analyze code path.
 
 
@@ -913,7 +914,7 @@ class TestB22CheckFiltersReplIgnored:
         mock_repl_session.run.return_value = 0
 
         with patch("parallelines.repl.ReplSession", return_value=mock_repl_session):
-            with patch("parallelines.cli._apply_check_filters") as mock_apply:
+            with patch("parallelines.pipeline.apply_check_filters") as mock_apply:
                 result = _main([
                     "--game", "l4d2",
                     "--game-root", "/fake/game",
@@ -933,8 +934,8 @@ class TestB22CheckFiltersReplIgnored:
         mock_store.hash_conflicts = None
         mock_store.dep_conflicts = None
 
-        with patch("parallelines.cli._build_store", return_value=(mock_store, None)):
-            with patch("parallelines.cli._apply_check_filters") as mock_apply:
+        with patch("parallelines.cli.build_store", return_value=(mock_store, None)):
+            with patch("parallelines.cli.apply_check_filters") as mock_apply:
                 with patch("parallelines.cli.print_summary_from_store"):
                     with patch("parallelines.cli.generate_report_from_store"):
                         result = _main([
@@ -1064,21 +1065,21 @@ class TestB24NoCacheCleanCacheRedundancy:
         mock_vfs.get_all_files.return_value = []
 
         with patch.object(Path, "exists", return_value=True):
-            with patch("parallelines.vfs.builder.VfsBuilder") as MockVfsBuilder:
+            with patch("parallelines.pipeline.VfsBuilder") as MockVfsBuilder:
                 mock_builder = MockVfsBuilder.return_value
                 mock_builder.build.return_value = mock_vfs
                 mock_builder.cache_hit = False
                 mock_builder.cache_size.return_value = "0 B"
                 mock_builder.get_chain.return_value = None
 
-                with patch("parallelines.graph.builder.GraphBuilder"):
-                    with patch("parallelines.cli.ResultStore") as MockResultStore:
+                with patch("parallelines.pipeline.GraphBuilder"):
+                    with patch("parallelines.pipeline.ResultStore") as MockResultStore:
                         MockResultStore.from_analysis.return_value = MagicMock()
                         with patch(
-                            "parallelines.analysis.entry_points.discover_entry_points",
+                            "parallelines.pipeline.discover_entry_points",
                             return_value=set(),
                         ):
-                            _build_store(config, args)
+                            build_store(config, args)
 
         # Verify VfsBuilder was created with use_cache=False (from --no-cache)
         _call_kwargs = MockVfsBuilder.call_args.kwargs

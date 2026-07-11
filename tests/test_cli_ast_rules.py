@@ -19,15 +19,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from parallelines.cli import (
-    _apply_check_filters,
-    _build_store,
-    _get_check_extensions,
     _main,
-    _parse_memory_limit,
     build_parser,
     cmd_analyze,
     cmd_external,
 )
+from parallelines.cli_args import get_check_extensions
+from parallelines.pipeline import apply_check_filters, build_store
+from parallelines.sys_utils import parse_memory_limit
 from parallelines.config import AppConfig
 
 # ---------------------------------------------------------------------------
@@ -146,11 +145,13 @@ def mock_build_store_deps():
     be patched at their **source** modules rather than at ``parallelines.cli``.
     """
     _TARGETS = [
-        "parallelines.vfs.builder.VfsBuilder",
-        "parallelines.graph.builder.GraphBuilder",
-        "parallelines.analysis.entry_points.discover_entry_points",
-        "parallelines.analysis.entry_points.filter_entry_points",
-        "parallelines.cli.ResultStore.from_analysis",
+        # NOTE: pipeline.py uses "from X import Y", so we patch at the
+        # import-site (parallelines.pipeline) rather than the definition-site.
+        "parallelines.pipeline.VfsBuilder",
+        "parallelines.pipeline.GraphBuilder",
+        "parallelines.pipeline.discover_entry_points",
+        "parallelines.pipeline.filter_entry_points",
+        "parallelines.pipeline.ResultStore.from_analysis",
         "parallelines.report.generators.generate_report_from_store",
         # All analyzer constructors that appear in _build_store's analyzer list
         "parallelines.analysis.redundancy.RedundancyAnalyzer",
@@ -169,15 +170,15 @@ def mock_build_store_deps():
     ]
     # Enter all patches and collect their mock objects
     with _CompoundPatchContext(_TARGETS) as mocks:
-        mock_vfs_builder_cls = mocks["parallelines.vfs.builder.VfsBuilder"]
-        mock_graph_builder_cls = mocks["parallelines.graph.builder.GraphBuilder"]
+        mock_vfs_builder_cls = mocks["parallelines.pipeline.VfsBuilder"]
+        mock_graph_builder_cls = mocks["parallelines.pipeline.GraphBuilder"]
         mock_discover_eps = mocks[
-            "parallelines.analysis.entry_points.discover_entry_points"
+            "parallelines.pipeline.discover_entry_points"
         ]
         mock_filter_eps = mocks[
-            "parallelines.analysis.entry_points.filter_entry_points"
+            "parallelines.pipeline.filter_entry_points"
         ]
-        mock_from_analysis = mocks["parallelines.cli.ResultStore.from_analysis"]
+        mock_from_analysis = mocks["parallelines.pipeline.ResultStore.from_analysis"]
         mock_exists = mocks["pathlib.Path.exists"]
 
         # VfsBuilder instance plumbing
@@ -318,7 +319,7 @@ def test_r05a_no_cache_eof_error(mock_build_store_deps) -> None:
     config = make_config()
     args = make_args(no_cache=True, yes=False)
     with patch("builtins.input", side_effect=EOFError("EOF")):
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
     assert store is None
     assert vfs is None
 
@@ -343,7 +344,7 @@ def test_r06_no_cache_and_clean_cache(mock_build_store_deps, caplog) -> None:
     caplog.set_level(logging.WARNING)
     config = make_config()
     args = make_args(no_cache=True, clean_cache=True)
-    _build_store(config, args)
+    build_store(config, args)
     # Should warn that the combination is redundant
     assert any(
         "no-cache" in msg.lower() and "clean" in msg.lower()
@@ -360,7 +361,7 @@ def test_r07_repl_clean_cache(mock_build_store_deps) -> None:
     """
     config = make_config()
     args = make_args(repl=True, clean_cache=True)
-    store, vfs = _build_store(config, args)
+    store, vfs = build_store(config, args)
     assert store is not None
     # _build_store should have called invalidate_cache on the builder
     mock_build_store_deps["vfs_instance"].invalidate_cache.assert_called_once()
@@ -379,7 +380,7 @@ def test_r08_repl_yes_skips_confirmation(mock_build_store_deps) -> None:
     config = make_config()
     args = make_args(repl=True, yes=True, no_cache=True)
     with patch("builtins.input") as mock_input:
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
     assert store is not None
     mock_input.assert_not_called()
 
@@ -416,13 +417,13 @@ def test_r10_cpu_zero_is_auto(mock_main_deps) -> None:
 
 def test_r11_memory_zero_parse() -> None:
     """R11: --memory "0" → _parse_memory_limit returns 0 (bypass)."""
-    assert _parse_memory_limit("0") == 0
+    assert parse_memory_limit("0") == 0
 
 
 def test_r11_memory_none_returns_none() -> None:
     """Empty memory string returns None from _parse_memory_limit."""
-    assert _parse_memory_limit("") is None
-    assert _parse_memory_limit(None) is None  # type: ignore[arg-type]
+    assert parse_memory_limit("") is None
+    assert parse_memory_limit(None) is None  # type: ignore[arg-type]
 
 
 # ===================================================================
@@ -433,7 +434,7 @@ def test_r11_memory_none_returns_none() -> None:
 def test_r12_check_all_dominates_single() -> None:
     """R12: --check-all + --check-textures → check-all dominates (all exts returned)."""
     args = make_args(check_all=True, check_textures=True)
-    exts = _get_check_extensions(args)
+    exts = get_check_extensions(args)
     assert exts is not None
     # All known extensions should be present
     all_known: set[str] = {
@@ -451,7 +452,7 @@ def test_r12_check_all_dominates_single() -> None:
 def test_r12_check_all_without_single() -> None:
     """--check-all alone also returns all extensions."""
     args = make_args(check_all=True)
-    exts = _get_check_extensions(args)
+    exts = get_check_extensions(args)
     all_known = {".vmt", ".vtf", ".tga", ".png", ".jpg",
                  ".mdl", ".vvd", ".vtx", ".phy", ".ani",
                  ".wav", ".mp3", ".ogg",
@@ -465,10 +466,10 @@ def test_r12_check_all_without_single() -> None:
 def test_r13_check_filters_called_in_cmd_analyze() -> None:
     """R13: analyze mode calls _apply_check_filters (via cmd_analyze)."""
     with (
-        patch("parallelines.cli._build_store") as mock_build,
+        patch("parallelines.cli.build_store") as mock_build,
         patch("parallelines.cli.print_summary_from_store"),
         patch("parallelines.cli.generate_report_from_store", return_value="/rpt"),
-        patch("parallelines.cli._apply_check_filters") as mock_apply,
+        patch("parallelines.cli.apply_check_filters") as mock_apply,
     ):
         mock_build.return_value = (MagicMock(), MagicMock())
         config = make_config()
@@ -516,7 +517,7 @@ def test_r17_graphviz_in_analyze_mode(mock_build_store_deps) -> None:
         mock_gen_dot.return_value = "/tmp/graph.dot"
         config = make_config()
         args = make_args(analyze=True, graphviz="/tmp/graph.dot")
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
         assert store is not None
         mock_gen_dot.assert_called_once()
 
@@ -527,7 +528,7 @@ def test_r17_graphviz_in_external_mode(mock_build_store_deps) -> None:
         mock_gen_dot.return_value = "/tmp/graph.dot"
         config = make_config()
         args = make_args(external="test.vpk", graphviz="/tmp/graph.dot")
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
         assert store is not None
         mock_gen_dot.assert_called_once()
 
@@ -536,13 +537,13 @@ def test_r17_graphviz_in_repl_mode(mock_build_store_deps) -> None:
     """R17: --repl --graphviz → graphviz generated in _build_store.
 
     The updated doc confirms graphviz works in ALL three modes since
-    the ``.dot`` generation happens inside ``_build_store()``.
+    the ``.dot`` generation happens inside ``build_store()``.
     """
     with patch("parallelines.report.graphviz.generate_dot") as mock_gen_dot:
         mock_gen_dot.return_value = "/tmp/graph.dot"
         config = make_config()
         args = make_args(repl=True, graphviz="/tmp/graph.dot")
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
         assert store is not None
         mock_gen_dot.assert_called_once()
 
@@ -569,7 +570,7 @@ def test_r18_external_vpk_priority_lowest(mock_build_store_deps) -> None:
     )
 
     with (
-        patch("parallelines.cli._build_store") as mock_build,
+        patch("parallelines.cli.build_store") as mock_build,
         patch("parallelines.cli.Path.exists", return_value=True),
         patch("parallelines.cli.Path.is_absolute", return_value=True),
     ):
@@ -590,7 +591,7 @@ def test_r18_external_vpk_priority_lowest(mock_build_store_deps) -> None:
                     json.dumps({"columns": ["virtual_path"], "rows": [["maps/test.bsp"]]}),
                     encoding="utf-8",
                 )
-            with patch("parallelines.cli._find_queries_dir", return_value=tmpdir):
+            with patch("parallelines.cli.find_queries_dir", return_value=tmpdir):
                 result = cmd_external(config, args)
         assert result == 0
 
@@ -672,13 +673,13 @@ def test_r21_repl_compare_maps_works(mock_build_store_deps) -> None:
     """R21 exception: --compare-maps works in REPL mode.
 
     The updated doc explicitly carves out ``--compare-maps`` from the REPL
-    restriction: ``compare-maps 在 _build_store() 中处理，在 REPL 模式下正常工作``.
+    restriction: ``compare-maps 在 build_store() 中处理，在 REPL 模式下正常工作``.
     """
     with patch("parallelines.parsers.vpk_parser.parse_vpk_index") as mock_parse:
         mock_parse.return_value = []
         config = make_config()
         args = make_args(repl=True, compare_maps=["addon1.vpk"])
-        store, vfs = _build_store(config, args)
+        store, vfs = build_store(config, args)
     assert store is not None
     mock_parse.assert_called_once()
 
@@ -687,7 +688,7 @@ def test_r22_no_entry_points_or_maps_auto_discover(mock_build_store_deps) -> Non
     """R22: No entry-points or maps → discover_entry_points() called."""
     config = make_config()
     args = make_args(entry_points=None, maps=None)
-    _build_store(config, args)
+    build_store(config, args)
     mock_build_store_deps["discover_eps"].assert_called_once()
 
 
@@ -695,7 +696,7 @@ def test_r23_entry_points_and_maps_merged(mock_build_store_deps) -> None:
     """R23: Both entry-points and maps → merged set passed to ResultStore."""
     config = make_config()
     args = make_args(entry_points=["root/script.nut"], maps=["c1m1_hotel"])
-    store, vfs = _build_store(config, args)
+    store, vfs = build_store(config, args)
     assert store is not None
     # discover_entry_points should NOT be called when explicit entry_points given
     mock_build_store_deps["discover_eps"].assert_not_called()
@@ -710,7 +711,7 @@ def test_r24_external_with_entry_points(mock_build_store_deps) -> None:
     """R24: --external with entry-points still works (entry_points honored)."""
     config = make_config()
     args = make_args(external="test.vpk", entry_points=["custom/path.txt"])
-    store, vfs = _build_store(config, args)
+    store, vfs = build_store(config, args)
     assert store is not None
     call_kwargs = mock_build_store_deps["from_analysis"].call_args[1]
     assert "custom/path.txt" in call_kwargs["entry_points"]
@@ -772,7 +773,7 @@ def test_r28_version_exits_immediately() -> None:
 
 def test_r05a_exit_via_cmd_analyze() -> None:
     """Verify that _build_store returning (None, None) makes cmd_analyze return 1."""
-    with patch("parallelines.cli._build_store", return_value=(None, None)):
+    with patch("parallelines.pipeline.build_store", return_value=(None, None)):
         result = cmd_analyze(make_config(), make_args(analyze=True))
     assert result == 1
 
@@ -805,7 +806,7 @@ def test_apply_check_filters_hash_conflicts() -> None:
     store.dep_conflicts = mock_dep_rel
 
     args = make_args(check_textures=True)
-    _apply_check_filters(store, args)
+    apply_check_filters(store, args)
 
     # Only .vmt rows should remain in hash_conflicts
     assert store.hash_conflicts is not None
