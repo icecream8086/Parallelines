@@ -92,7 +92,6 @@ jobs:
           retention-days: 7
 
       - name: Rename full dist & build minimal binary
-        shell: ${{ matrix.shell }}
         run: |
           ${{ matrix.py }} -c "import shutil; shutil.move('dist/parallelines', 'dist/parallelines-full')"
           ${{ matrix.py }} scripts/build_exe.py --minimal
@@ -143,6 +142,7 @@ jobs:
           echo "FULL_ARTIFACT=parallelines-$VERSION-linux-x86_64-full.tar.gz" >> $GITHUB_ENV
 
       - name: Upload minimal artifact
+        if: matrix.os == 'windows-latest' || matrix.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.MINIMAL_ARTIFACT }}
@@ -150,6 +150,7 @@ jobs:
           retention-days: 7
 
       - name: Upload full artifact
+        if: matrix.os == 'windows-latest' || matrix.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.FULL_ARTIFACT }}
