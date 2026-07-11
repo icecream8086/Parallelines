@@ -86,7 +86,7 @@ try {
         throw "conda create failed"
     }
 
-    conda run -n $envName python -m pip cache purge
+    try { conda run -n $envName python -m pip cache purge } catch { Write-Host "  (pip cache purge skipped)" }
 
     # ---- 5. Environment sanity check ----
     Write-Host ""
@@ -130,7 +130,20 @@ print("PYTHONUTF8=" + e.get("PYTHONUTF8", "unset"))
         Pop-Location
     }
 
-    # ---- 8. Build ----
+    # ---- 8. Tests ----
+    Write-Host ""
+    Write-Host "--- Tests ---"
+    Push-Location $repoRoot
+    try {
+        conda run -n $envName python -m pytest tests/ -q --tb=short -m "not slow and not overnight" --ignore=tests/engine/test_query_properties.py --ignore=tests/formal --ignore=tests/parsers/test_mdl_binary_events.py
+        if ($LASTEXITCODE -ne 0) {
+            throw "tests failed (exit $LASTEXITCODE)"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    # ---- 9. Build ----
     Write-Host ""
     Write-Host "--- Build ---"
     Push-Location $repoRoot
@@ -143,7 +156,7 @@ print("PYTHONUTF8=" + e.get("PYTHONUTF8", "unset"))
         Pop-Location
     }
 
-    # ---- 9. Audit ----
+    # ---- 10. Audit ----
     Write-Host ""
     Write-Host "--- Audit ---"
     Push-Location $repoRoot

@@ -15,8 +15,25 @@ import struct
 from pathlib import Path
 
 import pytest
-from hypothesis import given, assume, settings
-from hypothesis import strategies as st
+
+_HYPOTHESIS_AVAILABLE: bool = False
+try:
+    from hypothesis import assume, given, settings
+    from hypothesis import strategies as st
+
+    _HYPOTHESIS_AVAILABLE = True
+except ImportError:
+
+    def given(x=None, **kw):  # type: ignore[misc]
+        return lambda f: f
+
+    def settings(x=None, **kw):  # type: ignore[misc]
+        return lambda f: f
+
+    def assume(x):  # type: ignore[misc]
+        pass
+
+    st = None  # type: ignore[assignment]
 
 # ═══════════════════════════════════════════════════════════════
 # 被测函数
@@ -146,6 +163,7 @@ _event_strategy = st.tuples(
 )
 
 
+@pytest.mark.skipif(not _HYPOTHESIS_AVAILABLE, reason="hypothesis not installed")
 class TestPropertyBased:
     """Hypothesis 属性基测试：随机合成事件 → 验证提取正确性。
 
