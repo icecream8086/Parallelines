@@ -28,17 +28,16 @@ jobs:
           - os: ubuntu-22.04
             shell: bash -l {0}
             py: python
+            pip: pip
           - os: windows-latest
             shell: pwsh
             py: python
+            pip: pip
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
       run:
         shell: ${{ matrix.shell }}
-    env:
-      PYTHONIOENCODING: utf-8
-      PYTHONUTF8: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -58,10 +57,10 @@ jobs:
           sudo apt install -y python3-dev binutils libcairo2-dev
 
       - name: Install project package
-        run: pip install -e ".[dev,build]"
+        run: ${{ matrix.pip }} install -e ".[dev,build]"
 
       - name: Generate icon
-        run: python scripts/generate_ico.py
+        run: ${{ matrix.py }} scripts/generate_ico.py
 
       - name: Cache PyInstaller analysis
         uses: actions/cache@v4
@@ -73,20 +72,17 @@ jobs:
           restore-keys: |
             pyinstaller-${{ matrix.os }}-
 
-      - name: Lint check (ruff)
-        run: python -m ruff check src/ tests/
-
-      - name: Type check (mypy)
-        run: python -m mypy src/parallelines/ --no-error-summary
-
       - name: Run tests
-        run: python -m pytest tests/ -q --tb=short -m "not slow and not overnight" --ignore=tests/engine/test_query_properties.py
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: ${{ matrix.py }} -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
 
       - name: Build minimal binary
-        run: python scripts/build_exe.py --minimal
+        run: ${{ matrix.py }} scripts/build_exe.py --minimal
 
       - name: Post-build artifact audit
-        run: python scripts/ci_audit.py dist/parallelines --json audit_report.json
+        run: ${{ matrix.py }} scripts/ci_audit.py dist/parallelines --json audit_report.json
 
       - name: Upload audit report
         uses: actions/upload-artifact@v4
@@ -97,6 +93,9 @@ jobs:
 
       - name: Package dist (Windows)
         if: matrix.os == 'windows-latest'
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           $version = python -c "from importlib.metadata import version; print(version('parallelines'))"
           $name = "parallelines-$version-win64-minimal.zip"

@@ -52,7 +52,21 @@ try {
     Write-Host "--- Create conda env: $envName ---"
 
     # Remove any leftover env from previous failed run
-    conda env remove -n $envName -y *>$null
+    $existing = conda env list 2>&1 | Select-String "^$envName\s"
+    if ($existing) {
+        Write-Host "  removing existing env: $envName"
+        conda env remove -n $envName -y 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  WARNING: failed to remove existing env, trying --force"
+            conda env remove -n $envName -y --force 2>&1 | Out-Null
+        }
+        # Verify removal
+        $stillThere = conda env list 2>&1 | Select-String "^$envName\s"
+        if ($stillThere) {
+            throw "Cannot remove existing env $envName — delete C:\Users\$env:USERNAME\miniconda3\envs\$envName manually"
+        }
+        Write-Host "  removed"
+    }
 
     $created = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -77,7 +91,8 @@ try {
     # ---- 5. Environment sanity check ----
     Write-Host ""
     Write-Host "--- Environment check ---"
-    $pythonCheck = @'
+    $checkScript = Join-Path $env:TEMP "_ci_check_encoding.py"
+    @"
 import sys, locale, os
 e = os.environ
 print("stdout=" + sys.stdout.encoding)
@@ -85,8 +100,9 @@ print("preferred=" + locale.getpreferredencoding())
 print("fs=" + sys.getfilesystemencoding())
 print("PYTHONIOENCODING=" + e.get("PYTHONIOENCODING", "unset"))
 print("PYTHONUTF8=" + e.get("PYTHONUTF8", "unset"))
-'@
-    conda run -n $envName python -c $pythonCheck
+"@ | Out-File -FilePath $checkScript -Encoding utf8
+    conda run -n $envName python $checkScript
+    Remove-Item $checkScript -ErrorAction SilentlyContinue
 
     # ---- 6. Install project ----
     Write-Host ""
