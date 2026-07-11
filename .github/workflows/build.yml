@@ -78,13 +78,29 @@ jobs:
           PYTHONUTF8: "1"
         run: ${{ matrix.py }} -m pytest tests/engine/ -q --tb=short --ignore=tests/engine/test_query_properties.py
 
-      - name: Build minimal binary
-        run: ${{ matrix.py }} scripts/build_exe.py --minimal
+      - name: Build full binary (with pandas/pyarrow cache)
+        run: ${{ matrix.py }} scripts/build_exe.py
 
-      - name: Post-build artifact audit
+      - name: Post-build artifact audit (full)
+        run: ${{ matrix.py }} scripts/ci_audit.py dist/parallelines --json audit_report_full.json
+
+      - name: Upload audit report (full)
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-full-${{ matrix.os }}
+          path: audit_report_full.json
+          retention-days: 7
+
+      - name: Rename full dist & build minimal binary
+        shell: ${{ matrix.shell }}
+        run: |
+          ${{ matrix.py }} -c "import shutil; shutil.move('dist/parallelines', 'dist/parallelines-full')"
+          ${{ matrix.py }} scripts/build_exe.py --minimal
+
+      - name: Post-build artifact audit (minimal)
         run: ${{ matrix.py }} scripts/ci_audit.py dist/parallelines --json audit_report.json
 
-      - name: Upload audit report
+      - name: Upload audit report (minimal)
         uses: actions/upload-artifact@v4
         with:
           name: audit-report-${{ matrix.os }}
@@ -98,28 +114,53 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           $version = python -c "from importlib.metadata import version; print(version('parallelines'))"
-          $name = "parallelines-$version-win64-minimal.zip"
-          7z a -tzip -r $name dist/parallelines/*
-          "ARTIFACT_NAME=$name" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          cd dist
+          # Minimal — dist/parallelines 已经是最小包
+          7z a -tzip -r "..\parallelines-$version-win64-minimal.zip" parallelines\*
+          Remove-Item -Recurse -Force parallelines
+          # Full
+          Rename-Item parallelines-full parallelines
+          7z a -tzip -r "..\parallelines-$version-win64-full.zip" parallelines\*
+          Remove-Item -Recurse -Force parallelines
+          cd ..
+          echo "MINIMAL_ARTIFACT=parallelines-$version-win64-minimal.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          echo "FULL_ARTIFACT=parallelines-$version-win64-full.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Package dist (Linux)
         if: matrix.os == 'ubuntu-22.04'
         run: |
           VERSION=$(python -c "from importlib.metadata import version; print(version('parallelines'))")
-          NAME="parallelines-$VERSION-linux-x86_64-minimal.tar.gz"
-          cd dist && tar -czf "../$NAME" parallelines/
-          echo "ARTIFACT_NAME=$NAME" >> $GITHUB_ENV
+          cd dist
+          # Minimal — dist/parallelines 已经是最小包
+          tar -czf "../parallelines-$VERSION-linux-x86_64-minimal.tar.gz" parallelines/
+          rm -rf parallelines
+          # Full
+          mv parallelines-full parallelines
+          tar -czf "../parallelines-$VERSION-linux-x86_64-full.tar.gz" parallelines/
+          rm -rf parallelines
+          cd ..
+          echo "MINIMAL_ARTIFACT=parallelines-$VERSION-linux-x86_64-minimal.tar.gz" >> $GITHUB_ENV
+          echo "FULL_ARTIFACT=parallelines-$VERSION-linux-x86_64-full.tar.gz" >> $GITHUB_ENV
 
-      - name: Upload artifact
+      - name: Upload minimal artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_NAME }}
+          name: ${{ env.MINIMAL_ARTIFACT }}
+          path: ${{ env.MINIMAL_ARTIFACT }}
+          retention-days: 7
+
+      - name: Upload full artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FULL_ARTIFACT }}
+          path: ${{ env.FULL_ARTIFACT }}
           retention-days: 7
 
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARTIFACT_NAME }}
+          files: |
+            ${{ env.MINIMAL_ARTIFACT }}
+            ${{ env.FULL_ARTIFACT }}
           generate_release_notes: true

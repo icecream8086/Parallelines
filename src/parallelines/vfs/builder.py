@@ -66,6 +66,9 @@ class VfsBuilder:
     Supports SSD caching via :class:`~parallelines.cache.manager.CacheManager`:
     VPK file lists are persisted as Parquet files so subsequent runs skip
     re-parsing when VPK timestamps are unchanged.
+
+    When pandas/pyarrow are not installed (minimal packaging), the cache
+    subsystem silently degrades — every run performs a cold build.
     """
 
     def __init__(
@@ -139,7 +142,7 @@ class VfsBuilder:
 
         # 3 -- Try cache load
         self._cache_hit = False
-        if self.use_cache and self._cache.is_valid(vpk_manifest):
+        if self.use_cache and HAS_PANDAS and self._cache.is_valid(vpk_manifest):
             vfs = self._load_from_cache()
             if vfs.get_all_files():
                 elapsed = time.perf_counter() - t0
@@ -168,9 +171,13 @@ class VfsBuilder:
             elapsed,
         )
 
-        # 5 -- Save to cache
-        if self.use_cache:
+        # 5 -- Save to cache (skip when pandas/pyarrow not available)
+        if self.use_cache and HAS_PANDAS:
             self._save_to_cache(vfs, vpk_manifest)
+        elif self.use_cache and not HAS_PANDAS:
+            logger.debug(
+                "pandas/pyarrow not available — cache disabled for this run"
+            )
 
         return vfs
 
@@ -179,7 +186,13 @@ class VfsBuilder:
 
         Must be called *after* :class:`~parallelines.graph.builder.GraphBuilder`
         has populated :attr:`FileNode.dependencies` on active nodes.
+
+        Silently skips when **pandas** is not installed (e.g. in a packaged
+        build that strips optional dependencies).
         """
+        if not HAS_PANDAS:
+            logger.debug("pandas not available — skipping edge cache")
+            return
         edge_records: list[dict[str, str]] = []
         for node in vfs.get_all_active():
             for dep in node.dependencies:
@@ -502,7 +515,12 @@ class VfsBuilder:
         return vfs
 
     def _save_to_cache(self, vfs: VirtualFileSystem, vpk_manifest: list[dict]) -> None:
-        """Persist the VFS to Parquet cache."""
+        """Persist the VFS to Parquet cache.
+
+        Skips when pandas is unavailable (minimal packaging mode).
+        """
+        if not HAS_PANDAS:
+            return
         try:
             records: list[dict] = []
             for node in vfs.get_all_files():
