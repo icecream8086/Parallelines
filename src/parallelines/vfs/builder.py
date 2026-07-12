@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -46,8 +47,8 @@ def _parse_vpk_worker(args: tuple) -> tuple:
     """Worker function for ProcessPool. Standalone to support pickling.
 
     Receieves ``(vpk_path_str, name, priority, is_disabled)`` and returns
-    ``(name, priority, entries_list, error_or_none, is_disabled)``. Returns the
-    exception message as the fourth element when parsing fails so
+    ``(path_str, name, priority, entries_list, error_or_none, is_disabled)``.
+    Returns the exception message as the fifth element when parsing fails so
     the caller can log the failure reason.
     """
     vpk_path_str, name, priority, is_disabled = args
@@ -56,8 +57,8 @@ def _parse_vpk_worker(args: tuple) -> tuple:
 
         entries = parse_vpk_index(vpk_path_str)
     except Exception as exc:
-        return (name, priority, [], str(exc), is_disabled)
-    return (name, priority, entries, None, is_disabled)
+        return (vpk_path_str, name, priority, [], str(exc), is_disabled)
+    return (vpk_path_str, name, priority, entries, None, is_disabled)
 
 
 class VfsBuilder:
@@ -95,7 +96,7 @@ class VfsBuilder:
             self.num_workers = max(1, cpu_count - 1) if cpu_count > 2 else 1
 
         self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
-        self.source_paths: dict[str, str] = {}
+        self.source_paths: dict[str, list[str]] = {}
         self.failed_vpk_count: int = 0
 
         cache_dir = self.config.general.cache_dir or default_cache_dir()
@@ -256,7 +257,7 @@ class VfsBuilder:
             # Scan VPKs in all Game* directories
             for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
                 vpk_queue.append((str(vpk_file), vpk_file.name, priority, False))
-                self.source_paths[vpk_file.name] = str(vpk_file)
+                self.source_paths.setdefault(vpk_file.name, []).append(str(vpk_file))
 
             # Game update directories — skip loose file scanning
             if token in ("game update", "gameupdate"):
@@ -266,8 +267,16 @@ class VfsBuilder:
             try:
                 resolved.relative_to(self.game_root)
             except ValueError:
-                logger.debug("Skipping loose scan for %s (outside game root)", resolved)
-                continue
+                # On Windows, different drives are not relative (e.g. C:\ vs D:\)
+                # commonpath also raises ValueError on cross-drive paths, so
+                # wrap it in its own try/except.
+                try:
+                    inside_root = os.path.commonpath([str(resolved.resolve()), str(self.game_root.resolve())]) == str(self.game_root.resolve())
+                except ValueError:
+                    inside_root = False
+                if not inside_root:
+                    logger.debug("Skipping loose scan for %s (outside game root)", resolved)
+                    continue
 
             self._scan_directory(vfs, resolved, resolved, priority)
 
@@ -318,7 +327,7 @@ class VfsBuilder:
             for vpk_file in disable_dir.glob(self.strategy.addon_vpk_glob):
                 if vpk_file.suffix.lower() == ".vpk":
                     vpk_queue.append((str(vpk_file), vpk_file.name, -1000, True))
-                    self.source_paths[vpk_file.name] = str(vpk_file)
+                    self.source_paths.setdefault(vpk_file.name, []).append(str(vpk_file))
 
         # Sort addon VPKs and assign priorities (delegated to AddonPrioritizer)
         prioritizer = AddonPrioritizer(
@@ -329,7 +338,7 @@ class VfsBuilder:
             addon_vpks
         ):
             vpk_queue.append((path_str, name, priority, is_disabled))
-            self.source_paths[name] = path_str
+            self.source_paths.setdefault(name, []).append(path_str)
 
         if self.debug:
             logger.debug("Found %d VPK(s) to parse", len(vpk_queue))
@@ -396,9 +405,9 @@ class VfsBuilder:
             if resolved is None or not resolved.is_dir():
                 continue
             for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
-                if vpk_file.name in seen:
+                if str(vpk_file) in seen:
                     continue
-                seen.add(vpk_file.name)
+                seen.add(str(vpk_file))
                 try:
                     st = vpk_file.stat()
                 except OSError:
@@ -421,9 +430,9 @@ class VfsBuilder:
             for vpk_file in sorted(resolved.glob(self.strategy.addon_vpk_glob)):
                 if vpk_file.suffix.lower() != ".vpk":
                     continue
-                if vpk_file.name in seen:
+                if str(vpk_file) in seen:
                     continue
-                seen.add(vpk_file.name)
+                seen.add(str(vpk_file))
                 try:
                     st = vpk_file.stat()
                 except OSError:
@@ -445,9 +454,9 @@ class VfsBuilder:
                     for vpk_file in sorted(workshop_dir.glob(self.strategy.addon_vpk_glob)):
                         if vpk_file.suffix.lower() != ".vpk":
                             continue
-                        if vpk_file.name in seen:
+                        if str(vpk_file) in seen:
                             continue
-                        seen.add(vpk_file.name)
+                        seen.add(str(vpk_file))
                         try:
                             st = vpk_file.stat()
                         except OSError:
@@ -484,6 +493,7 @@ class VfsBuilder:
                     file_hash=row.get("file_hash"),
                     is_enabled=bool(row.get("is_enabled", True)),
                     is_disabled_addon=bool(row.get("is_disabled_addon", False)),
+                    source_path=row.get("source_path", ""),
                 )
                 vfs.add_file(node)
 
@@ -530,6 +540,7 @@ class VfsBuilder:
                         "file_hash": node.file_hash or "",
                         "is_enabled": node.is_enabled,
                         "is_disabled_addon": node.is_disabled_addon,
+                        "source_path": node.source_path,
                     }
                 )
 
@@ -543,7 +554,7 @@ class VfsBuilder:
                 "game": self.game,
                 "entry_count": len(records),
                 "entries": {
-                    e["source_name"]: {
+                    Path(e["path"]).as_posix(): {
                         "mtime": e.get("mtime", 0),
                         "size": e.get("size", 0),
                     }
@@ -582,9 +593,9 @@ class VfsBuilder:
         seen: set[str] = set()
 
         def _add_vpk(vpk_path: Path) -> None:
-            if not vpk_path.is_file() or vpk_path.name in seen:
+            if not vpk_path.is_file() or str(vpk_path) in seen:
                 return
-            seen.add(vpk_path.name)
+            seen.add(str(vpk_path))
             try:
                 chain.add_sys(VPKFileSystem(str(vpk_path)))
             except Exception as exc:
@@ -644,7 +655,9 @@ class VfsBuilder:
 
         source_name = vpk_path.name
         self._add_vpk_entries(
-            vfs, source_name, priority, entries, is_disabled_addon=is_disabled_addon
+            vfs, source_name, priority, entries,
+            is_disabled_addon=is_disabled_addon,
+            source_path=str(vpk_path.resolve()),
         )
         logger.debug("Ingested %s: %d files", source_name, len(entries))
         return True
@@ -656,6 +669,7 @@ class VfsBuilder:
         priority: int,
         entries: list[dict],
         is_disabled_addon: bool = False,
+        source_path: str = "",
     ) -> None:
         """Add parsed VPK entries to the VFS. Must be called from the main process."""
         for entry in entries:
@@ -663,6 +677,7 @@ class VfsBuilder:
                 virtual_path=entry["virtual_path"],
                 source_type="vpk",
                 source_name=source_name,
+                source_path=source_path,
                 priority=priority,
                 file_size=entry.get("file_size", 0),
                 file_hash=entry.get("crc"),
@@ -707,7 +722,7 @@ class VfsBuilder:
                 n if n is not None else "auto",
             )
             with Pool(n) as pool:
-                for name, priority, entries, error, is_disabled in pool.imap_unordered(
+                for path_str, name, priority, entries, error, is_disabled in pool.imap_unordered(
                     _parse_vpk_worker, vpk_queue
                 ):
                     if error:
@@ -715,7 +730,9 @@ class VfsBuilder:
                         self.failed_vpk_count += 1
                     if entries:
                         self._add_vpk_entries(
-                            vfs, name, priority, entries, is_disabled_addon=is_disabled
+                            vfs, name, priority, entries,
+                            is_disabled_addon=is_disabled,
+                            source_path=path_str,
                         )
                 if self.failed_vpk_count:
                     logger.warning(
@@ -770,7 +787,11 @@ class VfsBuilder:
         Handles ``|gameinfo_path|`` prefix.  Returns ``None`` if the resolved
         path does not exist.
         """
-        path_str = search_path.replace("|gameinfo_path|", str(self.game_root))
+        GAMEINFO_PREFIX = "|gameinfo_path|"
+        if search_path.lower().startswith(GAMEINFO_PREFIX):
+            path_str = str(self.game_root) + search_path[len(GAMEINFO_PREFIX):]
+        else:
+            path_str = search_path
         resolved = Path(path_str)
         if not resolved.is_absolute():
             resolved = self.game_root / resolved

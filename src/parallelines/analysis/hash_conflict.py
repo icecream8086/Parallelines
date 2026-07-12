@@ -9,6 +9,13 @@ from parallelines.engine import Relation, ResultStore
 from parallelines.engine.schema import HashConflictRow
 
 
+def _is_engine_vpk(source_name: str) -> bool:
+    """Check if a VPK name represents an engine/base game VPK."""
+    lower = source_name.lower()
+    stem = lower[:-4] if lower.endswith(".vpk") else lower
+    return stem.endswith("_dir") or lower == "base"
+
+
 class HashConflictAnalyzer(Analyzer):
     """Detects files that share a virtual_path across different sources but
     have different content hashes -- a sign of potential file conflicts.
@@ -38,7 +45,7 @@ class HashConflictAnalyzer(Analyzer):
 
         rows: list[HashConflictRow] = []
         for virtual_path, nodes in by_path.items():
-            sources = {n.source_name for n in nodes}
+            sources = {(n.source_name, n.source_path) for n in nodes}
             if len(sources) < 2:
                 continue
 
@@ -52,6 +59,12 @@ class HashConflictAnalyzer(Analyzer):
             for loser in sorted_nodes[1:]:
                 if loser.file_hash == winner.file_hash:
                     continue
+                winner_is_engine = _is_engine_vpk(winner.source_name)
+                loser_is_engine = _is_engine_vpk(loser.source_name)
+                if winner_is_engine or loser_is_engine:
+                    severity = "info"
+                else:
+                    severity = "warning"
                 rows.append(
                     HashConflictRow(
                         virtual_path=virtual_path,
@@ -59,6 +72,7 @@ class HashConflictAnalyzer(Analyzer):
                         loser_source=loser.source_name,
                         winner_hash=winner.file_hash or "",
                         loser_hash=loser.file_hash or "",
+                        severity=severity,
                     )
                 )
 

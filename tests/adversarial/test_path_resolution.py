@@ -461,10 +461,10 @@ class TestMrP3:
 
 
 class TestMrP5:
-    """MR-P5: Same-name VPKs from different directories -> source_paths dedup."""
+    """MR-P5: Same-name VPKs from different directories -> source_paths stores all paths."""
 
-    def test_same_name_vpks_overwrite_in_source_paths(self, tmp_path: Path) -> None:
-        """Two VPKs with same name in different dirs -> only last survives in source_paths."""
+    def test_same_name_vpks_stores_both_paths(self, tmp_path: Path) -> None:
+        """Two VPKs with same name in different dirs -> both paths stored in list."""
         # Create a minimal game_root so _build_from_disk won't crash
         game_root = tmp_path / "game"
         game_root.mkdir()
@@ -492,15 +492,17 @@ class TestMrP5:
         assert "same_name.vpk" in builder.source_paths, (
             "same_name.vpk not found in source_paths after _build_from_disk"
         )
-        # 键碰撞行为：dict[str,str] 中后写入的胜出。验证最终值来自 addons/b。
+        # 现在 source_paths 是 dict[str, list[str]]，两个路径都应保留。
         result = builder.source_paths["same_name.vpk"]
-        assert isinstance(result, str)
-        assert "addons" in result, (
-            f"Expected source_paths['same_name.vpk'] to reference an addon dir, "
-            f"got: {result}"
-        )
-        # 确认结果是一个真实存在的路径（非原地返回或空字符串）
-        assert len(result) > 5
+        assert isinstance(result, list)
+        assert len(result) == 2, f"Expected 2 paths, got {len(result)}: {result}"
+        for p in result:
+            assert "addons" in p, (
+                f"Expected source_paths['same_name.vpk'] to reference addon dirs, "
+                f"got: {p}"
+            )
+        # 确认两个路径都真实存在
+        assert all(len(p) > 5 for p in result)
 
 
 # ── Edge cases ──────────────────────────────────────────────────

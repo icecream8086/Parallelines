@@ -39,6 +39,7 @@ class HashConflictRow:
     loser_source: str
     winner_hash: str
     loser_hash: str
+    severity: str = "warning"
 
 
 @dataclass

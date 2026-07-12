@@ -235,6 +235,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete existing cache and rebuild",
     )
     parser.add_argument(
+        "--all-maps",
+        action="store_true",
+        default=False,
+        help="Use ALL maps as entry points (default: none; use --maps for specific maps)",
+    )
+    parser.add_argument(
         "--maps",
         type=str,
         nargs="*",

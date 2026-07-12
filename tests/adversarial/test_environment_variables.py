@@ -68,15 +68,16 @@ class TestDefaultCacheDir:
             expected = str(Path("C:/Users/test/AppData/Roaming") / "parallelines" / "cache")
             assert result == expected
 
-    def test_windows_frozen_both_empty_falls_to_home(self):
+    def test_windows_frozen_both_empty_falls_to_temp(self):
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
             mock.patch.dict(os.environ, {"LOCALAPPDATA": "", "APPDATA": ""}, clear=False),
-            mock.patch("pathlib.Path.home", return_value=Path("C:\\Users\\test")),
         ):
+            import tempfile
+
             result = default_cache_dir()
-            expected = "C:\\Users\\test\\.cache\\parallelines"
+            expected = str(Path(tempfile.gettempdir()) / "parallelines" / "cache")
             assert result == expected
 
     @pytest.mark.skipif(not _HAS_HYPOTHESIS, reason="hypothesis not installed")

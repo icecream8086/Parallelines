@@ -68,6 +68,7 @@ class TestHashConflictAnalyzer(unittest.TestCase):
         self.assertEqual(rows[0].loser_source, "addon_a")
         self.assertEqual(rows[0].winner_hash, "def456")
         self.assertEqual(rows[0].loser_hash, "abc123")
+        self.assertEqual(rows[0].severity, "warning")
 
     def test_no_conflict_single_source(self) -> None:
         """A file appearing in only one source should not be reported."""
@@ -147,6 +148,7 @@ class TestHashConflictAnalyzer(unittest.TestCase):
         # Addon wins (priority 200 > 100)
         self.assertEqual(rows[0].winner_source, "addon_overrider")
         self.assertEqual(rows[0].loser_source, "pak01_dir")
+        self.assertEqual(rows[0].severity, "info")
 
     def test_engine_wins_info_severity(self) -> None:
         """Engine source wins and hash differs -> 1 conflict row."""
@@ -179,6 +181,7 @@ class TestHashConflictAnalyzer(unittest.TestCase):
         # Engine source wins (pak01_dir has priority 100 > 50)
         self.assertEqual(rows[0].winner_source, "pak01_dir")
         self.assertEqual(rows[0].loser_source, "addon_x")
+        self.assertEqual(rows[0].severity, "info")
 
     def test_none_vfs_empty_fragment(self) -> None:
         """A None VFS should not raise and hash_conflicts should remain None."""

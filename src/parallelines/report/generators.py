@@ -42,7 +42,7 @@ def generate_report_from_store(
 def _write_json(data: dict, path: Path) -> None:
     """Write dict data as JSON."""
     text = json.dumps(data, indent=2, ensure_ascii=False)
-    FileWriter.write_text(path, text)
+    FileWriter.atomic_write_text(path, text)
 
 
 def _write_text_from_store(store: ResultStore, path: Path) -> None:
@@ -66,7 +66,7 @@ def _write_text_from_store(store: ResultStore, path: Path) -> None:
             )
         lines.append(table.get_string())
         lines.append("")
-    FileWriter.write_text(path, "\n".join(lines))
+    FileWriter.atomic_write_text(path, "\n".join(lines))
 
 
 def _write_csv_from_store(store: ResultStore, path: Path) -> None:
@@ -87,7 +87,7 @@ def _write_csv_from_store(store: ResultStore, path: Path) -> None:
                 ]
             )
         buffer.write("\n")
-    FileWriter.write_text(path, buffer.getvalue())
+    FileWriter.atomic_write_text(path, buffer.getvalue())
 
 
 def _write_html_from_store(store: ResultStore, path: Path) -> None:
@@ -117,4 +117,4 @@ def _write_html_from_store(store: ResultStore, path: Path) -> None:
             lines.append("</tr>")
         lines.append("</tbody></table>")
     lines.append("</body></html>")
-    FileWriter.write_text(path, "\n".join(lines))
+    FileWriter.atomic_write_text(path, "\n".join(lines))

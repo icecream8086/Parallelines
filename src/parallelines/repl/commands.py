@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 from parallelines.engine.store import Relation
+from parallelines.io import FileReader, FileWriter
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +143,7 @@ def cmd_save(session, args: str) -> bool:
     path = args.strip() or "repl_store.json"
     try:
         data = session.store.to_dict()
-        Path(path).write_text(
-            json.dumps(data, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        FileWriter.write_text(path, json.dumps(data, indent=2, ensure_ascii=False, default=str))
         print(f"Store saved to {path}.")
     except Exception as e:
         print(f"Save failed: {e}")
@@ -175,7 +173,7 @@ def cmd_load(session, args: str) -> bool:
         print(f"File not found: {p}")
         return True
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(FileReader.read_text(p))
     except Exception as e:
         print(f"Failed to read JSON: {e}")
         return True

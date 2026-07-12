@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 # ── Encoding conventions (single source of truth) ──
 
 GAME_FILE_ENCODING = "utf-8"
-GAME_FILE_ERRORS = "replace"       # game files may not be clean UTF-8
 CONFIG_FILE_ENCODING = "utf-8"
 WRITE_FILE_ERRORS = "surrogateescape"  # preserve undecodable bytes in paths
 
@@ -51,11 +50,26 @@ class FileReader:
     def read_game_text(path: str | Path) -> str:
         """Read a game config file (gameinfo.txt, addoninfo, manifest, …).
 
-        Tolerates non-UTF-8 bytes via ``errors="replace"``.
+        Tries strict UTF-8 first; falls back to locale-preferred encoding,
+        cp1252, shift_jis, then latin-1 (never fails).
         """
-        return Path(path).read_text(
-            encoding=GAME_FILE_ENCODING, errors=GAME_FILE_ERRORS
-        )
+        import locale
+
+        p = Path(path)
+        try:
+            return p.read_text(encoding=GAME_FILE_ENCODING)
+        except UnicodeDecodeError:
+            logger.warning(
+                "Non-UTF-8 bytes in %s — attempting encoding detection", p
+            )
+            raw = p.read_bytes()
+            for enc in (locale.getpreferredencoding(), "cp1252", "shift_jis", "latin-1"):
+                try:
+                    return raw.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            # ponytail: latin-1 never fails, keep guard in case list changes
+            return raw.decode("latin-1")
 
     @staticmethod
     def read_json(path: str | Path) -> dict:
@@ -135,15 +149,16 @@ class FileWriter:
 
 
 def reconfigure_stdout() -> None:
-    """Force UTF-8 encoding on ``sys.stdout`` for cross-platform Unicode support.
+    """Force UTF-8 on ``sys.stdout`` only when attached to a terminal.
 
-    游戏文件路径和输出可能包含任意 Unicode（含中文），而 Windows 终端经常使
-    用 cp936/GB2312 code page。本函数在 CLI 入口点被调用一次，避免此后每个
-    ``print()`` 因为编码问题抛出 ``UnicodeEncodeError``。
+    When piped (``| findstr``, ``> file``), respect the system encoding so
+    downstream consumers get valid text in their expected code page.
     """
     import io
     import sys
 
+    if not sys.stdout.isatty():
+        return
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="surrogateescape")

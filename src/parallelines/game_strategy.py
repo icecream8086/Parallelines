@@ -72,7 +72,9 @@ class GameStrategy:
     sound_wave_fields: list[str] = field(default_factory=lambda: ["wave", "rndwave"])
 
     # ── 引擎入口点自动发现 ─────────────────────────────────
-    # 入口点 BSP 数量上限 (0 表示全部)
+    # 入口点 BSP 数量上限 (-1 = 全部, 0 = 不添加, N = 前 N 个).
+    # 默认不添加 .bsp（它们无外出边，对可达性分析无贡献）。
+    # 用户可通过 --all-maps 覆盖为 -1，或 --maps 添加特定地图。
     bsp_entry_limit: int = 0
 
     # 是否自动从 missions/*.txt 推导地图入口点
@@ -124,7 +126,7 @@ def _build_registry() -> dict[str, GameStrategy]:
             "scripts/population.txt",
             "scripts/sound_prefetch.txt",
         ],
-        bsp_entry_limit=0,  # 全部 BSP 作为入口点
+        bsp_entry_limit=0,  # 前 10 个 BSP 作为入口点; --all-maps 覆盖为全部
     )
 
     l4d1 = GameStrategy(

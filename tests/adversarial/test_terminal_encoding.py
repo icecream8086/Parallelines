@@ -153,25 +153,22 @@ class TestStdoutReconfigure:
 class TestFileEncodingAssumptions:
     """gameinfo.txt / addonlist.txt encoding adversarial tests."""
 
-    def test_gameinfo_cp1252_produces_replacement_characters(self, tmp_path) -> None:
-        """H9: cp1252 gameinfo.txt → U+FFFD replacement in parsed output.
-
-        parse_gameinfo reads with encoding='utf-8', errors='replace', so
-        cp1252 bytes (like e = 0xE9) get replaced by U+FFFD (?).
-        This IS the real bug: non-UTF-8 characters are silently corrupted.
-        """
+    def test_gameinfo_cp1252_decodes_correctly(self, tmp_path) -> None:
+        """H9 FIXED: cp1252 gameinfo.txt decodes to correct characters."""
         gi = tmp_path / "gameinfo.txt"
         gi.write_bytes(b'GameInfo\n{\n\tgame\t"L\xe9ft 4 Dead"\n}\n')
 
         result = parse_gameinfo(gi)
-        # parse_gameinfo nests everything under the root key ("gameinfo")
         game_name = str(result.get("gameinfo", {}).get("game", ""))
 
-        # The e character (0xE9 in cp1252) is invalid UTF-8 -> replaced with U+FFFD
-        assert "�" in game_name, (
-            f"H9 CONFIRMED: cp1252 'e' was NOT replaced by U+FFFD.\n"
+        # Fix: cp1252 0xE9 = é, no more U+FFFD replacement chars
+        assert "�" not in game_name, (
+            f"H9 FIXED: cp1252 'e' should not produce U+FFFD.\n"
             f"  game={game_name!r}\n"
-            f"  This means the encoding handling may have changed - re-evaluate."
+        )
+        assert "é" in game_name, (
+            f"H9 FIXED: cp1252 'é' should be decoded correctly.\n"
+            f"  game={game_name!r}\n"
         )
 
     def test_addonlist_without_bom_parses_correctly(self, tmp_path) -> None:

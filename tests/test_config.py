@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from unittest.mock import patch
 
 from parallelines.config import (
     AppConfig,
+    default_cache_dir,
     load_config,
 )
 
@@ -134,6 +137,60 @@ log_level = "WARNING"
             self.assertEqual(config.general.log_level, "WARNING")
         finally:
             tmp_path.unlink()
+
+
+    # ── default_cache_dir ──────────────────────────────────────────────
+
+    def test_default_cache_dir_non_frozen(self) -> None:
+        """Non-frozen returns CWD-relative ./cache."""
+        with patch("sys.frozen", False, create=True):
+            self.assertEqual(default_cache_dir(), "./cache")
+
+    def test_default_cache_dir_win32_localappdata(self) -> None:
+        """Windows frozen with LOCALAPPDATA set uses it."""
+        with (
+            patch("sys.frozen", True, create=True),
+            patch("sys.platform", "win32"),
+            patch.dict(os.environ, {"LOCALAPPDATA": "C:\\Users\\x\\AppData\\Local"}),
+        ):
+            self.assertEqual(
+                default_cache_dir(),
+                "C:\\Users\\x\\AppData\\Local\\parallelines\\cache",
+            )
+
+    def test_default_cache_dir_win32_appdata_fallback(self) -> None:
+        """Windows frozen with empty LOCALAPPDATA falls back to APPDATA."""
+        with (
+            patch("sys.frozen", True, create=True),
+            patch("sys.platform", "win32"),
+            patch.dict(os.environ, {"LOCALAPPDATA": "", "APPDATA": "C:\\Users\\x\\AppData\\Roaming"}),
+        ):
+            self.assertEqual(
+                default_cache_dir(),
+                "C:\\Users\\x\\AppData\\Roaming\\parallelines\\cache",
+            )
+
+    def test_default_cache_dir_win32_temp_fallback(self) -> None:
+        """Windows frozen with neither LOCALAPPDATA nor APPDATA uses temp dir."""
+        import tempfile
+
+        with (
+            patch("sys.frozen", True, create=True),
+            patch("sys.platform", "win32"),
+            patch.dict(os.environ, {"LOCALAPPDATA": "", "APPDATA": ""}),
+        ):
+            result = default_cache_dir()
+            expected = str(Path(tempfile.gettempdir()) / "parallelines" / "cache")
+            self.assertEqual(result, expected)
+
+    def test_default_cache_dir_linux(self) -> None:
+        """Linux frozen uses ~/.cache/parallelines."""
+        with (
+            patch("sys.frozen", True, create=True),
+            patch("sys.platform", "linux"),
+        ):
+            expected = str(Path.home() / ".cache" / "parallelines")
+            self.assertEqual(default_cache_dir(), expected)
 
 
 if __name__ == "__main__":

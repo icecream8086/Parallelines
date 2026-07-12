@@ -64,20 +64,20 @@ class TestFileReaderWriter:
 
     # ── MR-Encoding: UTF-8 编码一致性 ───────────────────────
 
-    def test_mr_encoding_game_text_replaces_bad_bytes(self, tmp_path):
-        """errors='replace' 在非法 UTF-8 字节上产生 U+FFFD 替代字符。"""
+    def test_mr_encoding_game_text_no_replacement_chars(self, tmp_path):
+        """Non-UTF-8 bytes decoded via latin-1 fallback, no U+FFFD chars."""
         bad_bytes = b"valid ascii + \xff\xfe\x00 invalid utf-8"
         path = tmp_path / "gameinfo.txt"
         path.write_bytes(bad_bytes)
 
         result = FileReader.read_game_text(path)
-        # \xff\xfe\x00 在 UTF-8 中非法 → 应被替换为 �(�) 而不是抛出异常
-        assert "�" in result, (
-            f"Expected U+FFFD replacement char for invalid UTF-8 bytes, "
+        # Fix: \xff\xfe decoded as ÿþ (latin-1), not U+FFFD replacement chars
+        assert "�" not in result, (
+            f"Unexpected U+FFFD replacement char after fix, "
             f"got: {result!r}"
         )
-        # 合法 ASCII 部分应保持不变
         assert "valid ascii" in result
+        assert "ÿ" in result  # \xff maps to ÿ in latin-1
 
     def test_mr_encoding_strict_text_rejects_bad_bytes(self, tmp_path):
         """read_text（严格模式）对非法 UTF-8 字节应崩溃——这是预期行为。"""

@@ -195,7 +195,9 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
     # 2 -- Resolve external VPK path
     vpk_path = Path(args.external)
     if not vpk_path.is_absolute():
-        vpk_path = Path.cwd() / vpk_path
+        vpk_path = Path(config.general.game_root) / vpk_path
+        if not vpk_path.exists():
+            vpk_path = Path.cwd() / vpk_path
     vpk_path = vpk_path.resolve()
     if not vpk_path.exists():
         logger.error("External VPK file not found: %s", vpk_path)
@@ -264,9 +266,7 @@ def cmd_external(config: AppConfig, args: argparse.Namespace) -> int:
     }
     for qname, rel in results.items():
         report_data[qname] = [dict(zip(rel.columns, r)) for r in rel.rows]
-    output_path.write_text(
-        json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    FileWriter.write_json(output_path, report_data)
     logger.info("External VPK report saved to %s", output_path)
 
     # 8 -- Run inline query if --query was specified

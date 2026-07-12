@@ -288,7 +288,7 @@ class GraphBuilder:
     def build_parallel(
         self,
         vfs,
-        source_paths: dict[str, str] | None = None,
+        source_paths: dict[str, list[str]] | None = None,
         num_workers: int = 0,
     ) -> DependencyGraph:
         """Build graph using pre-read + parallel parsing approach.
@@ -423,6 +423,8 @@ class GraphBuilder:
         if ext == ".vmt":
             return extract_vmt_dependencies(content.decode("utf-8", errors="replace"))
         if ext == ".nut" and HAS_NUT:
+            if len(content) >= 2 and content[:2] == b"\xfa\xfa":
+                return set()
             text = content.decode("utf-8", errors="replace")
             return extract_nut_dependencies(text)
         if ext == ".txt":

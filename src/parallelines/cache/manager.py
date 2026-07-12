@@ -79,6 +79,7 @@ class CacheManager:
             # VPK file name appears in multiple directories (e.g. pak01_dir.vpk
             # in both left4dead2/ and hl2/).
             key = vpk.get("path") or vpk.get("source_name") or vpk.get("name", "")
+            key = key.replace("\\", "/")
             current_state[key] = vpk
 
         return self.strategy.is_valid(cached_entries, current_state)

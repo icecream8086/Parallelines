@@ -18,7 +18,7 @@ def extract_melee_dependencies(file_content: str) -> set[str]:
                 continue
             for key in _MODEL_KEYS:
                 val = weapon_def.get(key)
-                if isinstance(val, str):
+                if isinstance(val, str) and val:
                     deps.add(val.replace("\\", "/"))
         return deps
     except Exception as exc:

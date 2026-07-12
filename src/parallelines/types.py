@@ -15,6 +15,7 @@ class FileNode:
     virtual_path: str
     source_type: str  # "game", "vpk", "addon"
     source_name: str  # vpk filename, addon name, or "base"
+    source_path: str = ""  # full path to source VPK (disambiguates same-name sources)
     addon_id: Optional[str] = None
     priority: int = 0
     file_size: int = 0

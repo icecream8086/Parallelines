@@ -71,7 +71,7 @@ def extract_bsp_dependencies(chain, virtual_path: str) -> set[str]:
         side_effects = extract_bsp_entity_side_effects(bsp)
         for cmd in side_effects.get("commands", []):
             for m in _EXEC_RE.finditer(cmd):
-                exec_target = m.group(1).strip().replace("\\", "/")
+                exec_target = m.group(1).strip().replace("\\", "/").strip('"')
                 if not exec_target.endswith(".cfg"):
                     exec_target += ".cfg"
                 if "/" not in exec_target:
@@ -105,6 +105,8 @@ def extract_bsp_entity_side_effects(bsp) -> dict[str, list[str]]:
     """
     effects: dict[str, list[str]] = {"commands": [], "globalstates": []}
     try:
+        if not hasattr(bsp, "ents"):
+            return effects
         ents = bsp.ents.entities if hasattr(bsp.ents, "entities") else bsp.ents
         for ent in ents:
             classname = str(ent.get("classname", "")).strip().lower()

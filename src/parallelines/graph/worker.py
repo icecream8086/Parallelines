@@ -11,10 +11,16 @@ from parallelines.error_policy import parse_failure
 
 # Existing parsers (always available).
 from parallelines.parsers.vmt_parser import extract_vmt_dependencies
-from parallelines.parsers.nut_parser import extract_nut_dependencies
 from parallelines.parsers.manifest_parser import is_manifest_path
 
 # Lazy imports for new parsers (parser-audit-fix.md ss1-2).
+try:
+    from parallelines.parsers.nut_parser import extract_nut_dependencies
+
+    HAS_NUT = True
+except ImportError:
+    HAS_NUT = False
+
 try:
     from parallelines.parsers.game_sounds_parser import extract_game_sounds_dependencies
 
@@ -168,7 +174,9 @@ def _dispatch_parse(virtual_path: str, ext: str, content: bytes) -> set[str]:
     if ext == ".vmt":
         text = content.decode("utf-8", errors="replace")
         return extract_vmt_dependencies(text)
-    if ext == ".nut":
+    if ext == ".nut" and HAS_NUT:
+        if len(content) >= 2 and content[:2] == b"\xfa\xfa":
+            return set()
         text = content.decode("utf-8", errors="replace")
         return extract_nut_dependencies(text)
     if ext == ".txt":

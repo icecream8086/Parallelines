@@ -195,7 +195,10 @@ def build_store(config: AppConfig, args: argparse.Namespace) -> tuple[ResultStor
     if getattr(args, "entry_points", None):
         entry_points = set(args.entry_points)
     else:
-        entry_points = discover_entry_points(vfs, chain=chain, game=config.general.game)
+        bsp_limit = -1 if getattr(args, "all_maps", False) else None
+        entry_points = discover_entry_points(
+            vfs, chain=chain, game=config.general.game, bsp_limit=bsp_limit,
+        )
 
     # 3b -- If --maps was provided, expand to maps/{name}.bsp and add to set.
     if getattr(args, "maps", None):
@@ -234,6 +237,8 @@ def build_store(config: AppConfig, args: argparse.Namespace) -> tuple[ResultStor
         external_maps: dict[str, str] = {}
         for vpk_arg in args.compare_maps:
             vpk_path = Path(vpk_arg)
+            if not vpk_path.exists():
+                vpk_path = Path(config.general.game_root) / vpk_arg
             if not vpk_path.exists():
                 vpk_path = Path.cwd() / vpk_arg
             if not vpk_path.exists():

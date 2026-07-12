@@ -12,8 +12,6 @@ try:
 except ImportError:
     HAS_HYPOTHESIS = False
 
-import z3
-
 from parallelines.types import FileNode
 from parallelines.vfs.filesystem import VirtualFileSystem
 
@@ -21,9 +19,7 @@ from parallelines.vfs.filesystem import VirtualFileSystem
 class TestVfsOverlayProperties:
     """Concrete VFS verification of overlay resolution properties.
 
-    All tests use real VFS instances — the Z3 solver is only used for
-    properties that genuinely benefit from SMT encoding (e.g. transitivity
-    with symbolic priorities).
+    All tests use real VFS instances.
     """
 
     # ------------------------------------------------------------------
@@ -31,19 +27,31 @@ class TestVfsOverlayProperties:
     # ------------------------------------------------------------------
     def test_overlay_transitivity(self) -> None:
         """priority(A) < priority(B) < priority(C) and same_path => A is overridden."""
-        solver = z3.Solver()
-        pA, pB, pC = z3.Ints("pA pB pC")
-        solver.add(pA < pB, pB < pC)
+        vfs = VirtualFileSystem()
+        vfs.add_file(FileNode(
+            virtual_path="shared.vmt", source_type="vpk",
+            source_name="low", priority=1, is_enabled=True,
+        ))
+        vfs.add_file(FileNode(
+            virtual_path="shared.vmt", source_type="vpk",
+            source_name="mid", priority=5, is_enabled=True,
+        ))
+        vfs.add_file(FileNode(
+            virtual_path="shared.vmt", source_type="vpk",
+            source_name="high", priority=10, is_enabled=True,
+        ))
+        vfs.resolve()
 
-        a_not_redundant = z3.Bool("a_not_redundant")
-        solver.add(
-            z3.Implies(a_not_redundant, z3.And(pA >= pB, pA >= pC))
-        )
-        solver.add(a_not_redundant)
+        winner = vfs.get_active_file("shared.vmt")
+        assert winner is not None
+        assert winner.source_name == "high"
+        assert winner.priority == 10
 
-        assert solver.check() == z3.unsat, (
-            "A cannot be non-redundant when pA < pB < pC"
-        )
+        for node in vfs.get_all_files():
+            if node.source_name != "high":
+                assert node.is_redundant, (
+                    f"Lower-priority file {node.source_name} should be redundant"
+                )
 
     # ------------------------------------------------------------------
     # Test 2 — Active / redundant mutual exclusion (concrete VFS)
@@ -65,14 +73,11 @@ class TestVfsOverlayProperties:
         ))
         vfs.resolve()
 
-        active_paths: set[str] = set()
         for node in vfs.get_all_files():
             if node.is_redundant:
-                assert node not in active_paths, (
+                assert vfs.get_active_file(node.virtual_path) is not node, (
                     f"Redundant file {node.virtual_path} is also active"
                 )
-                continue
-            active_paths.add(node.virtual_path)
 
     # ------------------------------------------------------------------
     # Test 3 — No winner without enabled files (concrete VFS)
@@ -291,6 +296,16 @@ class TestVfsResolveEdgeCases:
         for node in specs:
             vfs.add_file(node)
         vfs.resolve()
+
+        assert len(vfs.get_all_files()) == len(specs), (
+            "resolve() dropped files"
+        )
+        # Every enabled non-dead file must be either the active winner or redundant
+        for node in vfs.get_all_files():
+            if node.is_enabled and not node.is_dead:
+                assert node.is_redundant or vfs.get_active_file(node.virtual_path) is node, (
+                    f"Enabled live file {node.virtual_path} is neither active nor redundant"
+                )
 
     @settings(suppress_health_check=[HealthCheck.too_slow])
     @given(specs=file_node_specs())

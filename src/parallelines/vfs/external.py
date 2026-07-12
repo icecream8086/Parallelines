@@ -81,6 +81,7 @@ class ExternalVpkOverlay:
                 virtual_path=entry["virtual_path"],
                 source_type="vpk",
                 source_name=source_name,
+                source_path=str(self.vpk_path.resolve()),
                 priority=self.priority,
                 file_size=entry.get("file_size", 0),
                 file_hash=entry.get("crc"),

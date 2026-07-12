@@ -50,7 +50,7 @@ def _read_manifest_content(chain, manifest_path: str) -> list[str]:
     return lines
 
 
-def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
+def discover_entry_points(vfs, chain=None, game: str = "", bsp_limit: int | None = None) -> set[str]:
     """Auto-discover entry points from active files.
 
     Scans all active files in the VFS and returns the set of virtual paths
@@ -64,11 +64,16 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
     to determine manifests, BSP limits, and script entry points. Otherwise
     the default Source 1 strategy is applied.
 
+    *bsp_limit* overrides the strategy's ``bsp_entry_limit`` when set.
+    Pass -1 to include all .bsp files, 0 for none, or N for first N alphabetically.
+
     Args:
         vfs: VirtualFileSystem instance with resolved active files.
         chain: Optional ``srctools.filesys.FileSystemChain`` for reading file
             content.  When provided, manifest-listed files are also added.
         game: Source Engine game ID (e.g. ``"l4d2"``, ``"tf2"``).
+        bsp_limit: Override for the strategy's BSP entry point limit.
+            ``None`` (default) uses the strategy value.  0 = all maps.
 
     Returns:
         A set of virtual paths acting as entry points.  Returns an empty set
@@ -80,7 +85,7 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
 
     try:
         active_files = vfs.get_all_active()
-    except Exception:
+    except Exception as exc:
         parse_failure(exc, "entry_points.discover")
         return set()
 
@@ -138,15 +143,20 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
             dep_count,
         )
 
-    # 2. .bsp files (limited by strategy.bsp_entry_limit, 0 = all).
+    # 2. .bsp files are NOT entry points by default — they have no outgoing
+    #    edges in the dependency graph, so adding them as roots does nothing
+    #    for reachability analysis.  Only include them when:
+    #    - User passes --all-maps (bsp_limit = -1)
+    #    - User passes --maps N (bsp_limit = N, positive integer)
+    #    - bsp_entry_limit in strategy is > 0 (game-specific default)
     bsp_candidates = sorted(
         (lower, original)
         for lower, original in active_paths_lower.items()
         if lower.endswith(".bsp")
     )
-    bsp_limit = strategy.bsp_entry_limit
+    limit = strategy.bsp_entry_limit if bsp_limit is None else bsp_limit
     bsp_count = 0
-    bsp_selected = bsp_candidates[:bsp_limit] if bsp_limit > 0 else bsp_candidates
+    bsp_selected = bsp_candidates if limit == -1 else (bsp_candidates[:limit] if limit > 0 else [])
     for lower_path, original_path in bsp_selected:
         entry_points.add(original_path)
         bsp_count += 1
@@ -154,7 +164,7 @@ def discover_entry_points(vfs, chain=None, game: str = "") -> set[str]:
         logger.debug(
             "discover_entry_points: found %d .bsp maps (limit=%s)",
             bsp_count,
-            bsp_limit if bsp_limit > 0 else "all",
+            limit,
         )
 
     # 3. Script / config entry points from strategy.

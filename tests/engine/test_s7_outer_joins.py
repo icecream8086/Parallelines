@@ -28,11 +28,11 @@ class TestJoinLeft:
         assert len(joined) == 2
         # a.txt: unmatched, conflict cols are None
         assert joined.rows[0][0] == "a.txt"
-        for val in joined.rows[0][-4:]:
+        for val in joined.rows[0][-5:]:
             assert val is None
         # b.txt: matched
         assert joined.rows[1][0] == "b.txt"
-        assert joined.rows[1][-4:] == ("addon_x", "base", "def", "abc")
+        assert joined.rows[1][-5:] == ("addon_x", "base", "def", "abc", "warning")
 
     def test_join_left_no_match(self) -> None:
         """No matching keys -> all left rows preserved with None padding."""
@@ -50,7 +50,7 @@ class TestJoinLeft:
         joined = files.join_left(conflicts, on="virtual_path")
         assert len(joined) == 2
         for row in joined.rows:
-            for val in row[-4:]:
+            for val in row[-5:]:
                 assert val is None
 
     def test_join_left_tuple_relation(self) -> None:

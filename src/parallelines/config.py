@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -96,7 +97,9 @@ def default_cache_dir() -> str:
             base = (os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or "").strip()
             if base:
                 return str(Path(base) / "parallelines" / "cache")
-        # Linux / macOS / fallback
+            # ponytail: temp dir, unlikely to hit given Windows always sets APPDATA
+            return str(Path(tempfile.gettempdir()) / "parallelines" / "cache")
+        # Linux / macOS
         return str(Path.home() / ".cache" / "parallelines")
     return "./cache"
 
@@ -106,7 +109,16 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config = AppConfig()
 
     if config_path is None:
-        config_path = Path.cwd() / "config.toml"
+        # Frozen exe: try next to exe first, then CWD.
+        # Dev: try CWD first, then script-relative as fallback.
+        if getattr(sys, "frozen", False):
+            config_path = Path(sys.executable).resolve().parent / "config.toml"
+            if not config_path.exists():
+                config_path = Path.cwd() / "config.toml"
+        else:
+            config_path = Path.cwd() / "config.toml"
+            if not config_path.exists():
+                config_path = Path(__file__).resolve().parent.parent.parent / "config.toml"
 
     if not config_path.exists():
         return config

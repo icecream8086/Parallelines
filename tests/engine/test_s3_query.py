@@ -97,6 +97,7 @@ class TestJoin:
             "loser_source",
             "winner_hash",
             "loser_hash",
+            "severity",
         )
         assert len(joined.rows[0]) == len(joined.columns)
         # verify virtual_path appears only once

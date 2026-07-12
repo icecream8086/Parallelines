@@ -88,7 +88,7 @@ def extract_mdl_dependencies(chain, virtual_path: str) -> set[str]:
     try:
         for seq in model.sequences:
             for event in seq.events:
-                if isinstance(event.type, AnimEvents) and event.type in _SOUND_EVENT_TYPES:
+                if AnimEvents is not None and isinstance(event.type, AnimEvents) and event.type in _SOUND_EVENT_TYPES:
                     sound = event.options.strip().replace("\\", "/")
                     if sound:
                         dependencies.add(normalise_sound_path(sound))

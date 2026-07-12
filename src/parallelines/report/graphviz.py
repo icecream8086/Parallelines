@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+from parallelines.io import FileWriter
 
 if TYPE_CHECKING:
     from parallelines.graph.deps import DependencyGraph
@@ -113,7 +114,7 @@ def generate_dot(
 
     lines.append("}")
 
-    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    FileWriter.write_text(output_path, "\n".join(lines) + "\n")
     logger.info(
         "Graphviz .dot saved to %s (%d nodes, %d edges)",
         output_path,
