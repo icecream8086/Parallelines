@@ -9,8 +9,23 @@ from pathlib import Path
 from parallelines.cache.strategies import CacheStrategy, MtimeStrategy
 from parallelines.error_policy import cache_write_failure
 from parallelines.io import FileReader, FileWriter
+from parallelines.resource import IoThrottle
 
 logger = logging.getLogger(__name__)
+
+
+class _NullContextManager:
+    """No-op context manager used when ``IoThrottle`` is not configured."""
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+
+_NULL_CM = _NullContextManager()
+
 
 try:
     import pandas as pd
@@ -39,9 +54,11 @@ class CacheManager:
         self,
         cache_dir: str | Path,
         strategy: CacheStrategy | None = None,
+        io_throttle: IoThrottle | None = None,
     ) -> None:
         self.cache_dir = Path(cache_dir)
         self.strategy: CacheStrategy = strategy or MtimeStrategy()
+        self._io_throttle = io_throttle
 
     # ------------------------------------------------------------------
     # Validation
@@ -138,9 +155,12 @@ class CacheManager:
             return
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         try:
-            files_df.to_parquet(self.cache_dir / "all_files.parquet")
+            throttle = self._io_throttle
+            with throttle if throttle else _NULL_CM:
+                files_df.to_parquet(self.cache_dir / "all_files.parquet")
             if edges_df is not None:
-                edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
+                with throttle if throttle else _NULL_CM:
+                    edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
         except Exception as exc:
             cache_write_failure(exc)
             return
@@ -158,7 +178,9 @@ class CacheManager:
             return
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         try:
-            edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
+            throttle = self._io_throttle
+            with throttle if throttle else _NULL_CM:
+                edges_df.to_parquet(self.cache_dir / "dependencies.parquet")
         except Exception as exc:
             cache_write_failure(exc)
             return

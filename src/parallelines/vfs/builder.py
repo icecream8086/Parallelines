@@ -81,6 +81,8 @@ class VfsBuilder:
         config: AppConfig | None = None,
         use_cache: bool = True,
         num_workers: int = 0,
+        resource_monitor: Any | None = None,
+        io_throttle: Any | None = None,
     ) -> None:
         self.game_root = Path(game_root).resolve()
         self.config = config if config is not None else load_config()
@@ -94,13 +96,15 @@ class VfsBuilder:
 
             cpu_count = os.cpu_count() or 0
             self.num_workers = max(1, cpu_count - 1) if cpu_count > 2 else 1
+        self._resource_monitor = resource_monitor
+        self._io_throttle = io_throttle
 
         self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
         self.source_paths: dict[str, list[str]] = {}
         self.failed_vpk_count: int = 0
 
         cache_dir = self.config.general.cache_dir or default_cache_dir()
-        self._cache = CacheManager(Path(cache_dir))
+        self._cache = CacheManager(Path(cache_dir), io_throttle=self._io_throttle)
         self._cache_hit = False
         self.debug = (
             (self.config.general.log_level == "DEBUG") if self.config else False
@@ -716,6 +720,11 @@ class VfsBuilder:
             from multiprocessing import Pool
 
             n = self.num_workers if self.num_workers > 0 else None
+
+            # Memory admission check before spawning Pool
+            if self._resource_monitor is not None and n is not None:
+                n = self._resource_monitor.clamp_workers(n)
+
             logger.info(
                 "Parsing %d VPK(s) in parallel (%s worker(s)) ...",
                 len(vpk_queue),

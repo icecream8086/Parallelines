@@ -24,6 +24,7 @@ class GeneralConfig:
     cache_strategy: str = "mtime"
     num_workers: int = 0  # 0 = auto (cpu_count - 1), 1 = single, N = specific
     memory_limit: str = ""  # e.g. "4GB", "2048MB", "" = auto, "0" = no limit
+    io_limit: int = 2  # max concurrent I/O operations (0 = unlimited)
     nolimit: bool = False  # bypass all resource limits, use maximum available
     log_level: str = "INFO"
 

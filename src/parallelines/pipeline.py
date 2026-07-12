@@ -20,6 +20,7 @@ from parallelines.config import AppConfig, default_cache_dir
 from parallelines.engine import ResultStore
 from parallelines.i18n import _
 from parallelines.graph.builder import GraphBuilder
+from parallelines.resource import IoThrottle, build_resource_monitor
 from parallelines.sys_utils import check_memory_available
 from parallelines.vfs.builder import VfsBuilder
 
@@ -102,6 +103,22 @@ def build_store(config: AppConfig, args: argparse.Namespace) -> tuple[ResultStor
 
     check_memory_available(config, logger)
 
+    # Build resource monitor for admission control
+    resource_monitor = build_resource_monitor(
+        memory_limit_str=config.general.memory_limit,
+        nolimit=config.general.nolimit,
+    )
+
+    # Apply memory-based worker clamping
+    if num_workers != 0:
+        num_workers = resource_monitor.clamp_workers(num_workers)
+
+    # Build I/O throttle
+    io_limit = config.general.io_limit
+    io_throttle: IoThrottle | None = (
+        IoThrottle(max_concurrent=io_limit) if io_limit else None
+    )
+
     # 1 -- Build VFS (with optional cache)
     use_cache = not getattr(args, "no_cache", False)
 
@@ -137,7 +154,13 @@ def build_store(config: AppConfig, args: argparse.Namespace) -> tuple[ResultStor
                 return None, None
             print()
 
-    builder = VfsBuilder(game_root, config, use_cache=use_cache, num_workers=num_workers)
+    builder = VfsBuilder(
+        game_root, config,
+        use_cache=use_cache,
+        num_workers=num_workers,
+        resource_monitor=resource_monitor,
+        io_throttle=io_throttle,
+    )
 
     if getattr(args, "clean_cache", False):
         builder.invalidate_cache()
@@ -172,7 +195,7 @@ def build_store(config: AppConfig, args: argparse.Namespace) -> tuple[ResultStor
         if chain is not None:
             vpk_count = sum(1 for s in chain.systems if "vpk" in str(type(s[0])).lower())
             logger.info("FileSystemChain ready (%d VPKs in chain)", vpk_count)
-            graph = GraphBuilder(chain, vfs, debug=(config.general.log_level == "DEBUG")).build()
+            graph = GraphBuilder(chain, vfs, debug=(config.general.log_level == "DEBUG"), resource_monitor=resource_monitor).build()
             logger.info(
                 "Graph ready: %d nodes, %d edges",
                 graph.node_count,

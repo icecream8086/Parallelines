@@ -75,6 +75,8 @@ def _main(argv: list[str] | None = None) -> int:
         config.general.num_workers = args.cpu
     if args.memory is not None:
         config.general.memory_limit = args.memory
+    if args.io is not None:
+        config.general.io_limit = args.io
     if args.nolimit:
         config.general.nolimit = True
     if args.lang:
@@ -109,7 +111,8 @@ def _main(argv: list[str] | None = None) -> int:
     )
     worker_str = "unlimited" if num_workers == 0 else str(num_workers)
     mem_str = config.general.memory_limit or "auto"
-    logger.info("Resources: %s workers, memory=%s", worker_str, mem_str)
+    io_str = "unlimited" if config.general.io_limit == 0 else str(config.general.io_limit)
+    logger.info("Resources: %s workers, memory=%s, io=%s", worker_str, mem_str, io_str)
 
     if not config.general.game_root:
         parser.print_help()

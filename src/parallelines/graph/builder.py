@@ -23,6 +23,7 @@ from parallelines.i18n import _
 from parallelines.io import FileReader
 from parallelines.parsers.manifest_parser import is_manifest_path
 from parallelines.parsers.vmt_parser import extract_vmt_dependencies
+from parallelines.resource import ResourceMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +164,11 @@ class GraphBuilder:
     are used; no on-demand file reading occurs.
     """
 
-    def __init__(self, chain, vfs, debug: bool = False) -> None:
+    def __init__(self, chain, vfs, debug: bool = False, resource_monitor: ResourceMonitor | None = None) -> None:
         self.chain = chain
         self.vfs = vfs
         self.debug = debug
+        self._resource_monitor = resource_monitor
 
     # ------------------------------------------------------------------
     # Public API
@@ -369,7 +371,11 @@ class GraphBuilder:
             parse_file_worker = None
 
         if parse_file_worker is not None and len(file_batch) >= 10:
-            with Pool(num_workers) as pool:
+            # Memory admission check before spawning Pool
+            effective_workers = num_workers
+            if self._resource_monitor is not None:
+                effective_workers = self._resource_monitor.clamp_workers(effective_workers)
+            with Pool(effective_workers) as pool:
                 for worker_result in pool.imap_unordered(parse_file_worker, file_batch):
                     results.extend(worker_result)
         else:

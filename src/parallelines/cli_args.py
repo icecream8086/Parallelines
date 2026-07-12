@@ -112,6 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Memory limit e.g. 4GB (default: auto, 0=no limit)",
     )
     parser.add_argument(
+        "--io",
+        type=int,
+        default=None,
+        help="Max concurrent I/O operations (default: 2, 0=unlimited)",
+    )
+    parser.add_argument(
         "--nolimit",
         action="store_true",
         default=None,
