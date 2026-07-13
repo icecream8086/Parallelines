@@ -32,6 +32,7 @@ from parallelines.parsers.vpk_parser import parse_vpk_index
 from parallelines.types import FileNode
 from parallelines.vfs.addon_prioritizer import AddonPrioritizer
 from parallelines.vfs.filesystem import VirtualFileSystem
+from parallelines.vfs.manifest_collector import ManifestCollector
 
 try:
     from tqdm import tqdm  # type: ignore[import-untyped]
@@ -100,6 +101,9 @@ class VfsBuilder:
         self._io_throttle = io_throttle
 
         self.strategy = get_strategy(self.game) if self.game else get_strategy("l4d2")
+        self._manifest_collector = ManifestCollector(
+            self.strategy, self.game_root, self._resolve_path
+        )
         self.source_paths: dict[str, list[str]] = {}
         self.failed_vpk_count: int = 0
 
@@ -398,84 +402,11 @@ class VfsBuilder:
     def _collect_vpk_manifest(
         self, search_paths: dict[str, Any], addon_roots: list[str]
     ) -> list[dict]:
-        """Build a manifest of all discoverable VPKs for cache validation."""
-        manifest: list[dict] = []
-        seen: set[str] = set()
+        """Build a manifest of all discoverable VPKs for cache validation.
 
-        # Game VPKs from all Game* search paths
-        all_game_dirs = extract_all_game_dirs(search_paths)
-        for token, game_dir in all_game_dirs:
-            resolved = self._resolve_path(game_dir)
-            if resolved is None or not resolved.is_dir():
-                continue
-            for vpk_file in sorted(resolved.glob(self.strategy.vpk_glob)):
-                if str(vpk_file) in seen:
-                    continue
-                seen.add(str(vpk_file))
-                try:
-                    st = vpk_file.stat()
-                except OSError:
-                    continue
-                manifest.append(
-                    {
-                        "source_name": vpk_file.name,
-                        "name": vpk_file.name,
-                        "path": str(vpk_file),
-                        "mtime": st.st_mtime,
-                        "size": st.st_size,
-                    }
-                )
-
-        # Addon VPKs (including workshop)
-        for addon_root_dir in dict.fromkeys(addon_roots + ["addons"]):
-            resolved = self._resolve_path(addon_root_dir)
-            if resolved is None or not resolved.is_dir():
-                continue
-            for vpk_file in sorted(resolved.glob(self.strategy.addon_vpk_glob)):
-                if vpk_file.suffix.lower() != ".vpk":
-                    continue
-                if str(vpk_file) in seen:
-                    continue
-                seen.add(str(vpk_file))
-                try:
-                    st = vpk_file.stat()
-                except OSError:
-                    continue
-                manifest.append(
-                    {
-                        "source_name": vpk_file.name,
-                        "name": vpk_file.name,
-                        "path": str(vpk_file),
-                        "mtime": st.st_mtime,
-                        "size": st.st_size,
-                    }
-                )
-
-            # Workshop addon VPKs
-            if self.strategy.scan_workshop:
-                workshop_dir = resolved / "workshop"
-                if workshop_dir.is_dir():
-                    for vpk_file in sorted(workshop_dir.glob(self.strategy.addon_vpk_glob)):
-                        if vpk_file.suffix.lower() != ".vpk":
-                            continue
-                        if str(vpk_file) in seen:
-                            continue
-                        seen.add(str(vpk_file))
-                        try:
-                            st = vpk_file.stat()
-                        except OSError:
-                            continue
-                        manifest.append(
-                            {
-                                "source_name": vpk_file.name,
-                                "name": vpk_file.name,
-                                "path": str(vpk_file),
-                                "mtime": st.st_mtime,
-                                "size": st.st_size,
-                            }
-                        )
-
-        return manifest
+        Delegates to :class:`ManifestCollector`.
+        """
+        return self._manifest_collector.collect(search_paths, addon_roots)
 
     def _load_from_cache(self) -> VirtualFileSystem:
         """Reconstruct a VFS from cached Parquet data."""

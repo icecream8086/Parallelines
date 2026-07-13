@@ -326,7 +326,12 @@ class GraphBuilder:
         file_batch: list[tuple[str, str, bytes]] = []
         mdl_bsp_files: list = []
 
-        for node in vfs.get_all_active():
+        for node in tqdm(
+            list(vfs.get_all_active()),
+            desc=_("graph.preread"),
+            unit="files",
+            disable=None,
+        ):
             if node.is_redundant:
                 continue
             ext = Path(node.virtual_path).suffix.lower()
@@ -376,7 +381,13 @@ class GraphBuilder:
             if self._resource_monitor is not None:
                 effective_workers = self._resource_monitor.clamp_workers(effective_workers)
             with Pool(effective_workers) as pool:
-                for worker_result in pool.imap_unordered(parse_file_worker, file_batch):
+                for worker_result in tqdm(
+                    pool.imap_unordered(parse_file_worker, file_batch),
+                    total=len(file_batch),
+                    desc=_("graph.parsing"),
+                    unit="files",
+                    disable=None,
+                ):
                     results.extend(worker_result)
         else:
             # Fallback: sequential in-process parsing
@@ -386,7 +397,12 @@ class GraphBuilder:
                     results.append((vp, list(deps)))
 
         # Phase C: .mdl/.bsp sequential
-        for node in mdl_bsp_files:
+        for node in tqdm(
+            mdl_bsp_files,
+            desc=_("graph.mdlbsp"),
+            unit="files",
+            disable=None,
+        ):
             if node.virtual_path.lower().endswith(".mdl") and HAS_MDL:
                 deps = self._extract_mdl_deps(node)
             elif HAS_BSP:
